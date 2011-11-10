@@ -22,7 +22,7 @@ MODULE geometry
   
   INTEGER :: N_nodes, N_ele_mesh
 
-  REAL(KINd=8),     DIMENSION(:,:), ALLOCATABLE :: rr_nodes
+  REAL(KINd=8), DIMENSION(:,:), ALLOCATABLE :: rr_nodes
   
 
   INTEGER, PARAMETER :: N_dim = 2
@@ -90,8 +90,8 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initilisize( ele(jt)%verts,             &
-                                   rr_nodes(:, ele(jt)%verts) )
+             CALL tri%initialize( ele(jt)%verts,             &
+                                  rr_nodes(:, ele(jt)%verts) )
 
              elements(jt)%p => tri
 
@@ -103,8 +103,8 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initilisize( ele(jt)%verts,             &
-                                   rr_nodes(:, ele(jt)%verts) )
+             CALL qua%initialize( ele(jt)%verts,             &
+                                  rr_nodes(:, ele(jt)%verts) )
 
              elements(jt)%p => qua
 
@@ -154,7 +154,7 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initilisize( VV, RR )
+             CALL tri%initialize( VV, RR )
 
              elements(jt)%p => tri
 
@@ -192,7 +192,7 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initilisize( VV, RR )
+             CALL qua%initialize( VV, RR )
 
              elements(jt)%p => qua
 

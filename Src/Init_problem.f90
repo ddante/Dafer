@@ -1,8 +1,7 @@
 MODULE init_problem
 
-  !USE Element_Class
-  !USE Geometry,       ONLY: N_dofs, element
-  !USE Models,         ONLY: strong_bc, detect_source
+  USE Geometry,       ONLY: N_dofs, elements
+  USE Models,         ONLY: strong_bc, detect_source
 
   IMPLICIT NONE
 
@@ -26,7 +25,7 @@ MODULE init_problem
 
   !=======================================
 
-  PUBLIC :: read_param !, initialization
+  PUBLIC :: read_param, initialization
   PUBLIC :: pb_name, order,              &
             scheme_type, time_int,       &
             pb_type, CFL, visc, ite_max, &
@@ -35,6 +34,66 @@ MODULE init_problem
   !=======================================
 
 CONTAINS
+  
+   !=================================
+   SUBROUTINE initialization(uu, rhs)
+   !=================================
+   !
+   ! Initialize the solution at the first time step
+   !
+   IMPLICIT NONE
+   
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE, INTENT(INOUT) :: uu
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE, INTENT(INOUT) :: rhs
+      !-------------------------------------------------------------
+      
+      INTEGER :: ierror, UNIT
+      !-------------------------------------------------------------
+
+      ! Solution and RHS
+      ALLOCATE( uu(N_dofs), rhs(N_dofs) )
+
+      ! Shock detector
+      ALLOCATE( theta(N_dofs), theta_t(N_dofs) )
+      
+      uu  = 0.d0;  rhs = 0.d0
+
+      theta = 1.d0;  theta_t = 10.d0
+
+      with_source = detect_source(pb_type)
+     
+      CALL strong_bc(pb_type, visc, uu, rhs)
+
+      ! Delete a possible previous convergence history...
+      UNIT = 4
+      
+      OPEN(UNIT, FILE = 'convergence.'//TRIM(ADJUSTL(pb_name)), & 
+          STATUS= 'REPLACE', IOSTAT = ierror)
+
+      IF(ierror /= 0) THEN
+         WRITE(*,*) 'ERROR: Impossible to open the file converegence'
+         WRITE(*,*) 'STOP'
+      
+         STOP
+      ENDIF     
+      CLOSE (UNIT)
+      
+      ! ... and error file
+      UNIT = 9
+      
+      OPEN(UNIT, FILE = 'error.'//TRIM(ADJUSTL(pb_name)), &
+           STATUS= 'REPLACE', IOSTAT = ierror)
+
+      IF(ierror /= 0) THEN
+         WRITE(*,*) 'ERROR: Impossible to open the file error'
+         WRITE(*,*) 'STOP'
+      
+         STOP
+      ENDIF     
+      CLOSE (UNIT)
+   
+   END SUBROUTINE initialization
+   !============================
 
   !=======================================
   SUBROUTINE read_param (unit, param_file)

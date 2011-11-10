@@ -1,0 +1,71 @@
+MODULE Segment_Class
+
+  USE Face_Class
+
+  IMPLICIT NONE
+  
+  !=========================================
+  TYPE, PUBLIC, EXTENDS(face) :: segment
+
+     ! < >
+
+   CONTAINS
+
+     PROCEDURE, PUBLIC :: initilisize => initilize_sub
+
+  END TYPE segment
+  !=========================================
+
+  PRIVATE :: initilize_sub
+
+CONTAINS
+
+  !=========================================
+  SUBROUTINE initilize_sub(e, Nodes, Coords)
+  !=========================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)                           :: e
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
+    REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    !-------------------------------------------------
+
+    INTEGER :: id
+    !-------------------------------------------------
+
+    SELECT CASE( SIZE(Nodes) )
+
+    CASE(2)
+
+       !e%Type     = SEG_P1
+       e%N_verts  = 2
+       e%N_points = 2
+
+    CASE(3)
+
+       !e%Type     = SEG_P2
+       e%N_verts  = 3
+       e%N_points = 2
+
+     CASE DEFAULT
+
+        WRITE(*,*) 'ERROR: Unsupported Element type'
+        STOP
+
+     END SELECT
+
+     ALLOCATE( e%Coords(SIZE(Coords,1), SIZE(Coords,2)) )
+     ALLOCATE( e%NU(SIZE(Nodes)) )
+     
+     DO id = 1, SIZE(Coords,1)
+        e%Coords(id, :) = Coords(id, :)
+     ENDDO
+
+     e%NU = Nodes
+     
+  END SUBROUTINE initilize_sub
+  !===========================
+
+END MODULE Segment_Class
+

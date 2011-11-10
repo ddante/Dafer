@@ -6,7 +6,7 @@ MODULE Post_pro
 
   USE geometry,      ONLY : N_dim, N_elements, N_dofs, elements
 
-  !USE models,       ONLY : exact_solution
+  USE models,        ONLY : exact_solution
   !USE Quadrature
 
   IMPLICIT NONE
@@ -128,9 +128,9 @@ CONTAINS
                  ns = ns + 1
                  Glo2Loc(j) = ns
 
-!                 uu_ex = exact_solution(pb_type, coord(:, j), visc)
+                 uu_ex = exact_solution(pb_type, coord(:, j), visc)
 
-                 WRITE(UNIT, 200) coord(:, j)!, uu(j), uu_ex
+                 WRITE(UNIT, 200) coord(:, j), uu(j), uu_ex
 
               ENDIF
 
@@ -214,12 +214,10 @@ CONTAINS
 
    
 100 FORMAT('TITLE = "Scalar advection prblem 2d"')
-!110 FORMAT('VARIABLES = "X", "Y", "sol", "sol_ex"')
-110 FORMAT('VARIABLES = "X", "Y"')
+110 FORMAT('VARIABLES = "X", "Y", "sol", "sol_ex"')
 120 FORMAT('ZONE T="uu", F=FEPOINT, N=',I6, ', E=',I6 ', ET=TRIANGLE' )
 121 FORMAT('ZONE T="uu", F=FEPOINT, N=',I6, ', E=',I6 ', ET=QUADRILATERAL' )
-!200 FORMAT(4(1x,e24.16))
-200 FORMAT(2(1x,e24.16))
+200 FORMAT(4(1x,e24.16))
 300 FORMAT(3(1x,I6))   
       
     END SUBROUTINE plot_procedure

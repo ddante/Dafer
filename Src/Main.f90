@@ -1,9 +1,11 @@
 PROGRAM main
 
-  USE init_problem,      ONLY: read_param, order, &
+  USE init_problem,      ONLY: initialization, read_param, order, &
                                ite_max, toll_res
   USE geometry,          ONLY: read_gmshMesh, init_elements, &
                                elements, N_elements
+  USE time_integration
+
   USE post_pro
 
   IMPLICIT NONE
@@ -12,6 +14,9 @@ PROGRAM main
   CHARACTER(len=64) :: param_file, mesh_file
 
   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: uu
+  REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: rhs
+
+  REAL(KIND=8) :: res
 
   INTEGER :: ite, UNIT
   !------------------------------------------------
@@ -42,7 +47,25 @@ PROGRAM main
  !------------------------------------------------
  CALL Init_Elements(Order)
    
+ !---------------
+ ! Initialization
+ !------------------------------------------------
+ CALL Initialization(uu, rhs)
+
+ ite = 1; res = 1.d0
+
+ !----------------
+ ! Solution update
+ !-----------------------------------------------
+ DO 
+    CALL time_advance(ite, uu, rhs, res);stop
+    
+    IF (ite >= ite_max .OR. res < toll_res) EXIT
  
+    ite = ite + 1
+ 
+ ENDDO
+
  !----------------
  ! Post-processing
  !----------------------------------------------

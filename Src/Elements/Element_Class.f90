@@ -1,5 +1,7 @@
 MODULE Element_Class
 
+  USE Face_Class
+  
   IMPLICIT NONE
 
   !==================================  
@@ -13,6 +15,10 @@ MODULE Element_Class
   INTEGER, PARAMETER :: QUA_Q2 = 21
   !==================================
 
+  TYPE :: faces_ptr     
+     CLASS(face), POINTER :: f     
+  END TYPE faces_ptr
+       
   !==================================
   TYPE, PUBLIC :: element
 
@@ -26,9 +32,12 @@ MODULE Element_Class
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
      INTEGER,      DIMENSION(:),   POINTER :: NU
 
+
+     TYPE(faces_ptr), DIMENSION(:), ALLOCATABLE :: faces
+     
 !!$   CONTAINS
 
-  END type element     
+  END TYPE element  
   !==================================
     
 CONTAINS

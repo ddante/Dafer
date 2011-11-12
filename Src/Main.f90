@@ -58,7 +58,8 @@ PROGRAM main
  ! Solution update
  !-----------------------------------------------
  DO 
-    CALL time_advance(ite, uu, rhs, res);stop
+
+    CALL time_advance(ite, uu, rhs, res)
     
     IF (ite >= ite_max .OR. res < toll_res) EXIT
  

@@ -31,7 +31,7 @@ CONTAINS
     INTEGER :: UNIT, ierror
     !-----------------------------------------------
 
-    CALL compute_rhs(uu, rhs, Dt_V); stop
+    CALL compute_rhs(uu, rhs, Dt_V)
 
     
     IF ( time_int == 0 ) THEN
@@ -71,9 +71,8 @@ CONTAINS
            
     IF(ierror /= 0) THEN
        
-       WRITE(*,*) 'ERROR: Impossible to open the file converegence'   
-       WRITE(*,*) 'STOP'       
-      
+       WRITE(*,*) 'ERROR: Impossible to open the file converegence'
+       WRITE(*,*) 'STOP'
        STOP
        
     ENDIF
@@ -90,7 +89,7 @@ CONTAINS
     WRITE(*, *)
 
 500 FORMAT(I5, 1x, e24.16)      
-600 FORMAT('Iteration # ', I5, '    uu min = ', F10.6, ', uu max =', F10.8)
+600 FORMAT('Iteration # ', I5, '    uu min = ', F10.8, ', uu max =', F10.8)
 601 FORMAT('     Rsidual = ', e16.8)
 
   END SUBROUTINE time_advance

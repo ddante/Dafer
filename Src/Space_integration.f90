@@ -7,11 +7,11 @@ MODULE space_integration
   USE init_problem,   ONLY: order, pb_type, visc, CFL, &
                             theta, theta_t, with_source
 
-  USE models,         ONLY: flux_function, strong_bc, &
+  USE models,         ONLY: advection_flux, strong_bc, &
                             source_term
-  !USE Num_scheme
+  USE Num_scheme
 
-  !USE Quadrature
+  USE Quadrature_rules, ONLY: oInt_n
 
   IMPLICIT NONE
   PRIVATE
@@ -59,12 +59,30 @@ CONTAINS
 
        !--------------------------
        ! Compute total fluctuation
-       !------------------------------------
+       !-----------------------------------
        Phi_tot = total_residual(loc_ele, u)
 
+       !----------------------------
+       ! Distribute the fluctuation
+       !-----------------------------------------------------------
+       CALL distribute_residual(loc_ele, Phi_tot, u, Phi_i, inv_dt)
+
+       ! Gather the nadal residual       
+       rhs(Nu) = rhs(Nu) + Phi_i
+       
+       Dt_V(Nu) = Dt_V(Nu) + inv_dt
+       
        DEALLOCATE( Nu, u, Phi_i )
       
     ENDDO
+
+    Dt_V = CFL/DT_V
+
+    !---------------------
+    ! Impose strong bc 
+    ! RHS = 0 on the inlet
+    !-------------------------------------
+    CALL strong_bc(pb_type, visc, uu, rhs)
 
   END SUBROUTINE compute_rhs
   !=========================
@@ -84,52 +102,35 @@ CONTAINS
     REAL(KIND=8) :: x, y
     REAL(KIND=8) :: Phi_advec, Phi_diff, Source
 
-    REAL(KIND=8), DIMENSION(N_dim) :: ff
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: ff
     
-    INTEGER :: Ns, i, j, k, kk
+    INTEGER :: Ns, i
     !---------------------------------------------
 
     Phi_advec = 0.d0
     Phi_diff  = 0.d0
     Source    = 0.d0
 
-
     Ns = ele%N_points
 
-! --- TEST --- OK
-write(*,*) ele%Type, '***'
-do k = 1, ele%N_verts
-j = MOD(k, MIN(k+1, ele%N_verts)) + 1
-kk = k + ele%N_verts
-write(*,*) ele%NU(k), ele%NU(j), ele%NU(kk)
-enddo
-do j = 1, ele%N_faces
-write(*,*) ele%faces(j)%f%NU(:), 'f'
-enddo
-write(*,*)
-! --- TEST ---
+    ALLOCATE( ff(N_dim, Ns) )
 
     DO i = 1, Ns
 
        x = ele%Coords(1, i)
        y = ele%Coords(2, i)
 
-       ff = flux_function(pb_type, u(i), x, y)
+       ff(:, i) = advection_flux(pb_type, u(i), x, y)
 
-       !Phi_advec = Int_AllEdges(ele, ff, Order)
-
-!!$       Phi_advec = Phi_advec + &
-!!$        DOT_PRODUCT( ff, ele%normale(i) ) * ele%weights(i)
-       
     ENDDO
 
-    ! IF visc, compute Phi_diff
-!!$
-!!$    Source = compute_source_int(ele, u)
+    Phi_advec = oInt_n(ele, ff)
+
+    DEALLOCATE( ff )
 
     Phi_tot = Phi_advec - Phi_diff - Source
                       !^^^
-         
+
   END FUNCTION total_residual
   !==========================
 

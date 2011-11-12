@@ -20,7 +20,7 @@ MODULE models
    REAL(KIND=8), PARAMETER :: theta = 100.d0
    !===============================================
 
-   PUBLIC :: advection_speed, flux_function,         & 
+   PUBLIC :: advection_speed, advection_flux,        & 
              exact_solution, strong_bc, source_term, &
              detect_source
    !===============================================
@@ -92,9 +92,9 @@ MODULE models
    END fUNCTION advection_speed
    !===========================
 
-   !======================================================
-   FUNCTION flux_function(type_pb, uu, x, y)  RESULT(flux)
-   !======================================================
+   !=======================================================
+   FUNCTION advection_flux(type_pb, uu, x, y)  RESULT(flux)
+   !=======================================================
    !
    ! Flux of the bidimensional problem 
    ! written in quasi-linear form
@@ -154,8 +154,8 @@ MODULE models
       
       END SELECT
    
-   END FUNCTION flux_function
-   !=========================
+   END FUNCTION advection_flux
+   !==========================
 
    !================================================
    FUNCTION source_term(type_pb, uu, x, y) RESULT(S)

@@ -90,7 +90,7 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initialize( ele(jt)%verts,             &
+             CALL tri%initialize( "element", ele(jt)%verts,  &
                                   rr_nodes(:, ele(jt)%verts) )
 
              elements(jt)%p => tri
@@ -103,7 +103,7 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initialize( ele(jt)%verts,             &
+             CALL qua%initialize( "element", ele(jt)%verts,  &
                                   rr_nodes(:, ele(jt)%verts) )
 
              elements(jt)%p => qua
@@ -154,7 +154,7 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initialize( VV, RR )
+             CALL tri%initialize( "element", VV, RR )
 
              elements(jt)%p => tri
 
@@ -192,7 +192,7 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initialize( VV, RR )
+             CALL qua%initialize( "element", VV, RR )
 
              elements(jt)%p => qua
 

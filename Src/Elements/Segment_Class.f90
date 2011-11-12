@@ -1,6 +1,7 @@
 MODULE Segment_Class
 
   USE Face_Class
+  USE Lin_Algebra
 
   IMPLICIT NONE
   
@@ -11,22 +12,41 @@ MODULE Segment_Class
 
    CONTAINS
 
-     PROCEDURE, PUBLIC :: initialisize => initialize_sub
+     PROCEDURE, PUBLIC :: initialisize    => initialize_sub
+     PROCEDURE, PUBLIC :: basis_function  => basis_function_fun
+     PROCEDURE, PUBLIC :: gradient        => gradient_fun
+     PROCEDURE, PUBLIC :: normal          => normal_fun
+     PROCEDURE, PUBLIC :: init_quadrature => init_quadrature_sub
 
   END TYPE segment
   !=========================================
 
   PRIVATE :: initialize_sub
 
+  PRIVATE :: basis_function_fun
+  PRIVATE :: basis_function_SEG_P1
+  PRIVATE :: basis_function_SEG_P2
+
+  PRIVATE :: gradient_fun
+  PRIVATE :: gradient_SEG_P1
+  PRIVATE :: gradient_SEG_P2
+
+  PRIVATE :: normal_fun
+    
+  PRIVATE :: init_quadrature_sub
+  PRIVATE :: init_quadrature_SEG_P1
+  PRIVATE :: init_quadrature_SEG_P2
+
 CONTAINS
 
-  !=========================================
-  SUBROUTINE initialize_sub(e, Nodes, Coords)
-  !=========================================
+  !===============================================
+  SUBROUTINE initialize_sub(e, loc, Nodes, Coords)
+  !===============================================
 
     IMPLICIT NONE
 
     CLASS(segment)                           :: e
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: loc
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
     !-------------------------------------------------
@@ -38,11 +58,13 @@ CONTAINS
 
     CASE(2)
 
+       e%Type     = SEG_P1
        e%N_verts  = 2
        e%N_points = 2
-
+              
     CASE(3)
 
+       e%Type     = SEG_P2
        e%N_verts  = 2
        e%N_points = 3
 
@@ -58,15 +80,411 @@ CONTAINS
      !---------------------------------------------------
      ALLOCATE( e%Coords(SIZE(Coords,1), SIZE(Coords,2)) )
      ALLOCATE( e%NU(SIZE(Nodes)) )
+     ALLOCATE( e%l_NU(SIZE(loc)) )
      
      DO id = 1, SIZE(Coords,1)
         e%Coords(id, :) = Coords(id, :)
      ENDDO
 
      e%NU = Nodes
+
+     e%l_NU = loc
      
   END SUBROUTINE initialize_sub
-  !===========================
+  !============================
 
+  !==================================================
+  FUNCTION basis_function_fun(e, i, xi) RESULT(psi_i)
+  !==================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: psi_i
+    !-------------------------------
+      
+    SELECT CASE(e%Type)
+       
+    CASE(SEG_P1)
+
+       psi_i = basis_function_SEG_P1(e, i, xi)
+       
+    CASE(SEG_P2)
+
+       psi_i = basis_function_SEG_P2(e, i, xi)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Segment type for basis functions'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+  END FUNCTION basis_function_fun
+  !==============================
+
+  !==============================================
+  FUNCTION gradient_fun(e, i, xi) RESULT(D_psi_i)
+  !==============================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8), DIMENSION(e%N_dim) :: D_psi_i
+    !-------------------------------------------
+      
+    SELECT CASE(e%Type)
+       
+    CASE(SEG_P1)
+
+       D_psi_i = gradient_SEG_P1(e, i, xi)
+       
+    CASE(SEG_P2)
+
+       D_psi_i = gradient_SEG_P2(e, i, xi)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Segment type for gradients'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+  END FUNCTION gradient_fun
+  !========================
+
+  !=====================================
+  FUNCTION normal_fun(e, xi) RESULT(n_i)
+  !=====================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8), DIMENSION(e%N_dim) :: n_i
+    !---------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: d
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: Jb
+
+    INTEGER :: i, k, l
+    !---------------------------------------------
+
+    ALLOCATE( d(e%N_dim, e%N_points) )
+
+    DO i = 1, e%N_points
+       d(:, i) = e%gradient(i, xi)
+    ENDDO    
+
+    ALLOCATE( Jb(e%N_dim-1, e%N_dim) )
+
+    DO k = 1, e%N_dim
+
+       DO l = 1, e%N_dim - 1
+
+          Jb(l, k) = SUM( e%Coords(k, :) * d(l, :) )
+
+       ENDDO
+
+    ENDDO
+
+    n_i = Cross_product(Jb)
+
+    DEALLOCATE( d, Jb )
+
+  END FUNCTION normal_fun
+  !======================
+
+  !================================
+  SUBROUTINE init_quadrature_sub(e)
+  !================================
+
+    IMPLICIT NONE
+
+    CLASS(segment) :: e
+    !------------------
+
+    SELECT CASE(e%Type)
+
+    CASE(SEG_P1)
+
+       CALL init_quadrature_SEG_P1(e)
+       
+    CASE(SEG_P2)
+
+       CALL init_quadrature_SEG_P2(e)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Segment type for quadrature'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+    
+  END SUBROUTINE init_quadrature_sub
+  !=================================
+
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%     SEGMENT P1     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  !=====================================================
+  FUNCTION basis_function_SEG_P1(e, i, xi) RESULT(psi_i)
+  !=====================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: psi_i
+    !------------------------------
+
+    SELECT CASE(i)
+
+    CASE(1)
+
+       psi_i = 1.d0 - xi
+
+    CASE(2)
+
+       psi_i = xi
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: not supported Dof in Segment basis function'
+       STOP
+
+    END SELECT    
+
+  END FUNCTION basis_function_SEG_P1
+  !=================================
+
+  !=================================================
+  FUNCTION gradient_SEG_P1(e, i, xi) RESULT(D_psi_i)
+  !=================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: D_psi_i
+    !------------------------------
+
+    SELECT CASE(i)
+
+    CASE(1)
+
+       D_psi_i = -1.d0
+
+    CASE(2)
+
+       D_psi_i = 1.d0
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: not supported Dof in Segment gradient'
+       STOP
+
+    END SELECT    
+
+  END FUNCTION gradient_SEG_P1
+  !===========================
+  
+  !===================================
+  SUBROUTINE init_quadrature_SEG_P1(e)
+  !===================================
+
+    IMPLICIT NONE
+
+    CLASS(segment) :: e
+    !------------------
+
+    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: x_q
+    REAL(KIND=8) :: Jac
+    INTEGER :: j, k
+    !---------------------------------------------
+
+    e%N_quad = 2
+
+    ALLOCATE(   e%n_q(e%N_dim,    e%N_quad) )
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%w_q(e%N_quad) )
+    ALLOCATE(   x_q(e%N_quad) )
+
+    !-----------------------------
+    x_q(1) = 0.d0
+    x_q(2) = 1.d0
+
+    e%w_q(1) = 0.5d0
+    e%w_q(2) = 0.5d0
+    !-----------------------------
+
+    DO j = 1, e%N_quad
+
+       DO k = 1, e%N_points
+
+          e%phi_q(k, j) = e%basis_function( k, x_q(j) )
+
+       ENDDO
+
+       e%n_q(:, j) = e%normal( x_q(j) )
+
+       Jac = SQRT( SUM(e%n_q(:, j)**2) )
+
+       e%n_q(:, j) = e%n_q(:, j)/Jac
+
+       e%w_q(j) = e%w_q(j) * Jac
+    
+    ENDDO    
+    
+  END SUBROUTINE init_quadrature_SEG_P1
+  !====================================
+
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%%     SEGMENT P2     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+  !=====================================================
+  FUNCTION basis_function_SEG_P2(e, i, xi) RESULT(psi_i)
+  !=====================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: psi_i
+    !------------------------------
+
+    SELECT CASE(i)
+
+    CASE(1)
+
+       psi_i = (1.d0 - xi)*(1.d0 - 2.d0*xi)
+
+    CASE(2)
+
+       psi_i = xi*(2.d0*xi - 1.d0)
+
+    CASE(3)       
+
+       psi_i = 4.d0*(1.d0 - xi)*xi 
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: not supported Dof in Segment baisis function'
+       STOP
+
+    END SELECT    
+
+  END FUNCTION basis_function_SEG_P2
+  !=================================
+
+  !=================================================
+  FUNCTION gradient_SEG_P2(e, i, xi) RESULT(D_psi_i)
+  !=================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: D_psi_i
+    !------------------------------
+
+    SELECT CASE(i)
+
+    CASE(1)
+
+       D_psi_i = 4.d0*xi - 3.d0
+
+    CASE(2)
+
+       D_psi_i = 4.d0*xi - 1.d0
+
+    CASE(3)
+
+       D_psi_i = 4.d0 - 8.d0*xi
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: not supported Dof in Segment gradient'
+       STOP
+
+    END SELECT    
+
+  END FUNCTION gradient_SEG_P2
+  !===========================  
+
+  !===================================
+  SUBROUTINE init_quadrature_SEG_P2(e)
+  !===================================
+
+    IMPLICIT NONE
+
+    CLASS(segment) :: e
+    !------------------
+
+    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: x_q
+    REAL(KIND=8) :: Jac
+    INTEGER :: j, k
+    !---------------------------------------------
+
+    e%N_quad = 3
+
+    ALLOCATE(   e%n_q(e%N_dim,    e%N_quad) )
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%w_q(e%N_quad) )
+    ALLOCATE(   x_q(e%N_quad) )
+
+    !-----------------------------
+    x_q(1) = 0.d0
+    x_q(2) = 1.d0
+    x_q(3) = 0.5d0
+
+    e%w_q(1) = 1.d0/6.d0
+    e%w_q(2) = 1.d0/6.d0
+    e%w_q(3) = 4.d0/6.d0
+    !-----------------------------
+
+    DO j = 1, e%N_quad
+
+       DO k = 1, e%N_points
+
+          e%phi_q(k, j) = e%basis_function( k, x_q(j) )
+
+       ENDDO
+
+       e%n_q(:, j) = e%normal( x_q(j) )
+
+       Jac = SQRT( SUM(e%n_q(:, j)**2) )
+
+       e%n_q(:, j) = e%n_q(:, j)/Jac
+
+       e%w_q(j) = e%w_q(j) * Jac
+
+    ENDDO
+    
+  END SUBROUTINE init_quadrature_SEG_P2
+  !====================================
+ 
 END MODULE Segment_Class
 

@@ -5,9 +5,6 @@ MODULE Element_Class
   IMPLICIT NONE
 
   !==================================  
-  INTEGER, PARAMETER :: SEG_P1 = 1
-  INTEGER, PARAMETER :: SEG_P2 = 2
-  
   INTEGER, PARAMETER :: TRI_P1 = 10
   INTEGER, PARAMETER :: TRI_P2 = 11
   
@@ -27,12 +24,18 @@ MODULE Element_Class
      INTEGER :: N_verts
      INTEGER :: N_points
      INTEGER :: N_Faces
-     INTEGER :: Type_f
+     
+     REAL(KIND=8) :: Volume
 
+     !-------------------------------
+     
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
      INTEGER,      DIMENSION(:),   POINTER :: NU
 
+     REAL(KIND=8), DIMENSION(:,:), POINTER :: rd_n
 
+     !-------------------------------
+     
      TYPE(faces_ptr), DIMENSION(:), ALLOCATABLE :: faces
      
 !!$   CONTAINS

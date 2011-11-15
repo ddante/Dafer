@@ -46,7 +46,7 @@ CONTAINS
     Dt_v = 0.d0
 
     DO je = 1, N_elements
-                   
+
        loc_ele = elements(je)%p
 
        Ns = loc_ele%N_points
@@ -61,6 +61,8 @@ CONTAINS
        ! Compute total fluctuation
        !-----------------------------------
        Phi_tot = total_residual(loc_ele, u)
+
+write(*,*) 'S ele', je
 
        !----------------------------
        ! Distribute the fluctuation
@@ -104,7 +106,7 @@ CONTAINS
 
     REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: ff
     
-    INTEGER :: Ns, i
+    INTEGER :: Ns, i, j
     !---------------------------------------------
 
     Phi_advec = 0.d0

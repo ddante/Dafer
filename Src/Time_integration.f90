@@ -31,7 +31,7 @@ CONTAINS
     INTEGER :: UNIT, ierror
     !-----------------------------------------------
 
-    CALL compute_rhs(uu, rhs, Dt_V)
+    CALL compute_rhs(uu, rhs, Dt_V);stop
 
     
     IF ( time_int == 0 ) THEN

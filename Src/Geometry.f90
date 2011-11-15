@@ -18,6 +18,10 @@ MODULE geometry
      CLASS(element), POINTER :: p
   END type elements_ptr
   TYPE(elements_ptr), DIMENSION(:), ALLOCATABLE :: elements
+
+  !----------------------------------------------------------
+
+  INTEGER, DIMENSION(:,:),   ALLOCATABLE :: edge_ele
   !==========================================================
   
   INTEGER :: N_nodes, N_ele_mesh
@@ -90,8 +94,10 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initialize( "element", ele(jt)%verts,  &
-                                  rr_nodes(:, ele(jt)%verts) )
+             CALL tri%initialize( "element", ele(jt)%verts,   &
+                                  rr_nodes(:, ele(jt)%verts), &
+                                  ele(jt)%NU_seg,             &
+                                  edge_ele(:, ele(jt)%NU_seg) )
 
              elements(jt)%p => tri
 
@@ -103,8 +109,10 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initialize( "element", ele(jt)%verts,  &
-                                  rr_nodes(:, ele(jt)%verts) )
+             CALL qua%initialize( "element", ele(jt)%verts,   &
+                                  rr_nodes(:, ele(jt)%verts), &
+                                  ele(jt)%NU_seg,             &
+                                  edge_ele(:, ele(jt)%NU_seg) )
 
              elements(jt)%p => qua
 
@@ -119,11 +127,10 @@ CONTAINS
        N_dofs     = N_nodes + N_seg       
        N_elements = N_ele_mesh
 
-
        ALLOCATE( elements(N_elements) )
        
        DO jt = 1, N_elements
-
+write(*,*) 'G ele', jt
           Nv = SIZE(ele(jt)%verts(:))
 
           SELECT CASE(Nv)
@@ -146,7 +153,7 @@ CONTAINS
                 is1 = ele(jt)%verts(i) 
                 is2 = ele(jt)%verts(j) 
 
-                RR(:, Nv+i) = 0.5d0 * ( rr_nodes(:, is1) + rr_nodes(:, is2) )
+                RR(:, Nv+i) = 0.5d0*( rr_nodes(:, is1) + rr_nodes(:, is2) )
 
              ENDDO          
 
@@ -154,7 +161,9 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initialize( "element", VV, RR )
+             CALL tri%initialize( "element", VV, RR,          &
+                                  ele(jt)%NU_seg,             &
+                                  edge_ele(:, ele(jt)%NU_seg) )
 
              elements(jt)%p => tri
 
@@ -192,7 +201,9 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initialize( "element", VV, RR )
+             CALL qua%initialize( "element", VV, RR,          &
+                                  ele(jt)%NU_seg,             &
+                                  edge_ele(:, ele(jt)%NU_seg) )
 
              elements(jt)%p => qua
 
@@ -221,7 +232,7 @@ CONTAINS
     INTEGER, PARAMETER :: v_max = 15
          
     INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: J_CON
-    INTEGER, DIMENSION(:,:),   ALLOCATABLE :: cn, edge_ele
+    INTEGER, DIMENSION(:,:),   ALLOCATABLE :: cn!, edge_ele
     INTEGER, DIMENSION(:),     ALLOCATABLE :: seg_b
 
     LOGICAL :: boundary
@@ -232,8 +243,6 @@ CONTAINS
     INTEGER :: jt, k, j, kv, iseg, i
 
     !========================================================
-
-!    ALLOCATE( edge(N_ele_mesh) )
 
     N_seg = N_nodes + N_ele_mesh - 1
 
@@ -451,7 +460,7 @@ CONTAINS
      !       Connectivity of each node with one edge
      !---------------------------------------------------------------------------
      !
-     ! NU_seg(i, jt) -- edge of the node i on the element jt
+     ! NU_seg(i, jt) -- local-to-glogal segments connectivity
      !
      DO jt = 1, N_ele_mesh
         Ns = SIZE(ele(jt)%verts(:))
@@ -524,20 +533,20 @@ CONTAINS
                l_4 = ABS( (is_4 - cn_1)*(is_4 - cn_2) )   
             ENDIF            
 
-            IF( SIZE(ele(ele_1)%NU_seg) == 3 ) THEN ! TRIANGLE               
+            IF( SIZE(ele(ele_1)%NU_seg) == 3 ) THEN ! TRIANGLE
                IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
-               IF( (l_1 + l_3) == 0 ) ele(ele_1)%NU_seg(3) = iseg               
+               IF( (l_1 + l_3) == 0 ) ele(ele_1)%NU_seg(3) = iseg
                IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
             ELSE ! QUADRANGLE
                IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
-               IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg               
-               IF( (l_3 + l_4) == 0 ) ele(ele_1)%NU_seg(3) = iseg               
-               IF( (l_4 + l_1) == 0 ) ele(ele_1)%NU_seg(4) = iseg               
+               IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
+               IF( (l_3 + l_4) == 0 ) ele(ele_1)%NU_seg(3) = iseg
+               IF( (l_4 + l_1) == 0 ) ele(ele_1)%NU_seg(4) = iseg
             ENDIF          
 
          ENDIF
              
-     ENDDO 
+      ENDDO
 
   END SUBROUTINE find_segments
   !===========================

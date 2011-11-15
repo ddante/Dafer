@@ -1,7 +1,7 @@
 MODULE LLxFS_method
 
   USE Element_class
-  USE geometry,       ONLY: N_dim
+  USE geometry,       ONLY: N_dim, elements
   USE init_problem,   ONLY: pb_type
   USE models,         ONLY: advection_speed
   
@@ -31,6 +31,8 @@ CONTAINS
     
     REAL(KIND=8)                   :: u_m, x_m, y_m
     REAL(KIND=8), DIMENSION(N_dim) :: a_m
+
+    REAL(KIND=8), DIMENSION(SIZE(Phi_i)) :: Stab_i
     !--------------------------------------------------
 
     Ns = ele%N_points
@@ -61,6 +63,8 @@ CONTAINS
 
     ! Limiting
     Phi_i = limitation(Phi_i)
+
+ stab_i = CIP_stabilization(ele, u) 
     
   END SUBROUTINE LLxFS_scheme
   !==========================
@@ -104,4 +108,39 @@ CONTAINS
   END FUNCTION limitation
   !======================
 
+  !==============================================
+  FUNCTION CIP_stabilization(ele, u) RESULT(Stab)
+  !==============================================
+
+    IMPLICIT NONE
+
+    TYPE(element),              INTENT(IN)  :: ele
+    REAL(KIND=8), DIMENSION(:), INTENT(IN)  :: u
+
+    REAL(KIND=8), DIMENSION(SIZE(u)) :: Stab
+    !---------------------------------------------
+
+    INTEGER :: if, iq, k
+    !---------------------------------------------
+
+    DO if = 1, ele%N_faces
+
+write(*,*) 'if', if
+
+       DO iq = 1, ele%faces(if)%f%N_quad
+
+write(*,*) 'iq', iq
+
+do k = 1, ele%N_points
+          write(*,*) ele%faces(if)%f%p_Dphi_q(:, k, iq)
+enddo
+       ENDDO       
+
+    ENDDO
+    
+write(*,*) '--------------'
+
+  END FUNCTION CIP_stabilization
+  !=============================
+    
 END MODULE LLxFS_method

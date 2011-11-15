@@ -39,9 +39,9 @@ MODULE Segment_Class
 
 CONTAINS
 
-  !===============================================
-  SUBROUTINE initialize_sub(e, loc, Nodes, Coords)
-  !===============================================
+  !==============================================================
+  SUBROUTINE initialize_sub(e, loc, Nodes, Coords, NU_seg, n_ele)
+  !==============================================================
 
     IMPLICIT NONE
 
@@ -49,6 +49,8 @@ CONTAINS
     INTEGER,      DIMENSION(:),   INTENT(IN) :: loc
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    INTEGER,                      INTENT(IN) :: NU_seg
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     INTEGER :: id
@@ -81,7 +83,7 @@ CONTAINS
      ALLOCATE( e%Coords(SIZE(Coords,1), SIZE(Coords,2)) )
      ALLOCATE( e%NU(SIZE(Nodes)) )
      ALLOCATE( e%l_NU(SIZE(loc)) )
-     
+          
      DO id = 1, SIZE(Coords,1)
         e%Coords(id, :) = Coords(id, :)
      ENDDO
@@ -89,6 +91,11 @@ CONTAINS
      e%NU = Nodes
 
      e%l_NU = loc
+
+     e%g_seg = NU_seg
+
+     ALLOCATE( e%c_ele(2) )
+     e%c_ele = n_ele
      
   END SUBROUTINE initialize_sub
   !============================
@@ -162,7 +169,10 @@ CONTAINS
   !=====================================
   FUNCTION normal_fun(e, xi) RESULT(n_i)
   !=====================================
-
+  !
+  ! Compute the normal versor to the face 
+  ! on the node with coordiantes xi
+  !
     IMPLICIT NONE
 
     CLASS(segment)            :: e
@@ -202,24 +212,31 @@ CONTAINS
   END FUNCTION normal_fun
   !======================
 
-  !================================
-  SUBROUTINE init_quadrature_sub(e)
-  !================================
-
+  !=========================================
+  SUBROUTINE init_quadrature_sub(e, p_D_phi)
+  !=========================================
+  !
+  ! Store the following  quantities at the quadrature points
+  !    - value of the basis function
+  !    - normal versor
+  !    - weight of the quadrature formula
+  !    - value of the gradient of the basis function 
+  !
     IMPLICIT NONE
 
-    CLASS(segment) :: e
-    !------------------
+    CLASS(segment)                             :: e
+    REAL(KIND=8), DIMENSION(:,:,:), INTENT(IN) :: p_D_phi
+    !----------------------------------------------------
 
     SELECT CASE(e%Type)
 
     CASE(SEG_P1)
 
-       CALL init_quadrature_SEG_P1(e)
+       CALL init_quadrature_SEG_P1(e, p_D_phi)
        
     CASE(SEG_P2)
 
-       CALL init_quadrature_SEG_P2(e)
+       CALL init_quadrature_SEG_P2(e, p_D_phi)
        
     CASE DEFAULT
 
@@ -303,19 +320,20 @@ CONTAINS
   END FUNCTION gradient_SEG_P1
   !===========================
   
-  !===================================
-  SUBROUTINE init_quadrature_SEG_P1(e)
-  !===================================
+  !============================================
+  SUBROUTINE init_quadrature_SEG_P1(e, p_D_phi)
+  !============================================
 
     IMPLICIT NONE
 
-    CLASS(segment) :: e
-    !------------------
+    CLASS(segment)                             :: e
+    REAL(KIND=8), DIMENSION(:,:,:), INTENT(IN) :: p_D_phi
+    !----------------------------------------------------
 
     REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: x_q
     REAL(KIND=8) :: Jac
-    INTEGER :: j, k
-    !---------------------------------------------
+    INTEGER :: j, k, l
+    !----------------------------------------------------
 
     e%N_quad = 2
 
@@ -325,6 +343,8 @@ CONTAINS
     ALLOCATE( e%w_q(e%N_quad) )
     ALLOCATE(   x_q(e%N_quad) )
 
+    ALLOCATE( e%p_Dphi_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+
     !-----------------------------
     x_q(1) = 0.d0
     x_q(2) = 1.d0
@@ -333,6 +353,8 @@ CONTAINS
     e%w_q(2) = 0.5d0
     !-----------------------------
 
+    e%p_Dphi_q = 0.d0
+ 
     DO j = 1, e%N_quad
 
        DO k = 1, e%N_points
@@ -348,6 +370,19 @@ CONTAINS
        e%n_q(:, j) = e%n_q(:, j)/Jac
 
        e%w_q(j) = e%w_q(j) * Jac
+
+
+       DO k = 1, SIZE(p_D_phi,3)
+
+          DO l = 1, e%N_points
+             
+             e%p_Dphi_q(:, k, j) = e%p_Dphi_q(:, k, j) + &
+                                   p_D_phi(:, l, k)*e%phi_q(l, j)
+ 
+          ENDDO          
+          
+       ENDDO
+       
     
     ENDDO    
     
@@ -433,19 +468,20 @@ CONTAINS
   END FUNCTION gradient_SEG_P2
   !===========================  
 
-  !===================================
-  SUBROUTINE init_quadrature_SEG_P2(e)
-  !===================================
+  !============================================
+  SUBROUTINE init_quadrature_SEG_P2(e, p_D_phi)
+  !============================================
 
     IMPLICIT NONE
 
-    CLASS(segment) :: e
-    !------------------
+    CLASS(segment)                             :: e
+    REAL(KIND=8), DIMENSION(:,:,:), INTENT(IN) :: p_D_phi
+    !----------------------------------------------------
 
     REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: x_q
     REAL(KIND=8) :: Jac
-    INTEGER :: j, k
-    !---------------------------------------------
+    INTEGER :: j, k, l
+    !----------------------------------------------------
 
     e%N_quad = 3
 
@@ -454,7 +490,9 @@ CONTAINS
 
     ALLOCATE( e%w_q(e%N_quad) )
     ALLOCATE(   x_q(e%N_quad) )
-
+    
+    ALLOCATE( e%p_Dphi_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    
     !-----------------------------
     x_q(1) = 0.d0
     x_q(2) = 1.d0
@@ -465,6 +503,8 @@ CONTAINS
     e%w_q(3) = 4.d0/6.d0
     !-----------------------------
 
+    e%p_Dphi_q = 0.d0
+    
     DO j = 1, e%N_quad
 
        DO k = 1, e%N_points
@@ -480,6 +520,18 @@ CONTAINS
        e%n_q(:, j) = e%n_q(:, j)/Jac
 
        e%w_q(j) = e%w_q(j) * Jac
+
+
+       DO k = 1, SIZE(p_D_phi,3)
+
+          DO l = 1, e%N_points
+             
+             e%p_Dphi_q(:, k, j) = e%p_Dphi_q(:, k, j) + &
+                                   p_D_phi(:, l, k)*e%phi_q(l, j)
+ 
+          ENDDO          
+          
+       ENDDO
 
     ENDDO
     

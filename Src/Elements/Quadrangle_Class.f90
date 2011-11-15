@@ -27,16 +27,18 @@ MODULE Quadrangle_Class
 
 CONTAINS
 
-  !================================================
-  SUBROUTINE initialize_sub(e, mode, Nodes, Coords)
-  !================================================
+  !===============================================================
+  SUBROUTINE initialize_sub(e, mode, Nodes, Coords, Nu_seg, n_ele)
+  !===============================================================
 
     IMPLICIT NONE
 
     CLASS(quadrangle)                        :: e
     CHARACTER(*),                 INTENT(IN) :: mode
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
-    REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords    
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
+    INTEGER,      DIMENSION(:,:), INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     INTEGER :: i, id
@@ -55,7 +57,7 @@ CONTAINS
 
        IF( mode == "element") THEN
           ! FACES
-          CALL init_faces_QUA_Q1(e, Nodes, Coords)
+          CALL init_faces_QUA_Q1(e, Nodes, Coords, NU_seg, n_ele)
        ENDIF
 
     CASE(9)
@@ -69,7 +71,7 @@ CONTAINS
 
        IF( mode == "element") THEN
           ! FACES
-          CALL init_faces_QUA_Q2(e, Nodes, Coords)
+          CALL init_faces_QUA_Q2(e, Nodes, Coords, NU_seg, n_ele)
        ENDIF
 
      CASE DEFAULT
@@ -140,15 +142,17 @@ CONTAINS
 !%%%%%%%%%%%%%%%%%%%%%%%%%    QUADRANGLE Q1   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-  !=============================================
-  SUBROUTINE init_faces_QUA_Q1(e, Nodes, Coords)
-  !=============================================
+  !============================================================
+  SUBROUTINE init_faces_QUA_Q1(e, Nodes, Coords, NU_seg, n_ele)
+  !============================================================
 
     IMPLICIT NONE
 
     CLASS(quadrangle)                        :: e
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
+    INTEGER,      DIMENSION(:,:), INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     TYPE(segment), POINTER :: seg
@@ -185,8 +189,8 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed quadrangle allocation'
        ENDIF
 
-       CALL seg%initialisize( loc, VV, RR )
-       CALL seg%init_quadrature()
+       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(:, if) )
+!       CALL seg%init_quadrature()
           
        e%faces(if)%f => seg
           
@@ -238,15 +242,17 @@ CONTAINS
 !%%%%%%%%%%%%%%%%%%%%%%%%%    QUADRANGLE Q2   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-  !=============================================
-  SUBROUTINE init_faces_QUA_Q2(e, Nodes, Coords)
-  !=============================================
+  !============================================================
+  SUBROUTINE init_faces_QUA_Q2(e, Nodes, Coords, NU_seg, n_ele)
+  !============================================================
 
     IMPLICIT NONE
 
     CLASS(quadrangle)                        :: e
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
+    INTEGER,      DIMENSION(:,:), INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     TYPE(segment), POINTER :: seg
@@ -285,8 +291,8 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed quadrangle allocation'
        ENDIF
 
-       CALL seg%initialisize( loc, VV, RR )
-       CALL seg%init_quadrature()
+       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(:, if) )
+!       CALL seg%init_quadrature()
 
        e%faces(if)%f => seg
           

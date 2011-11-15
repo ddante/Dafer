@@ -22,14 +22,20 @@ MODULE Face_Class
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
      INTEGER,      DIMENSION(:),   POINTER :: NU
      INTEGER,      DIMENSION(:),   POINTER :: l_nu
+     INTEGER                               :: g_seg
+     INTEGER,      DIMENSION(:),   POINTER :: c_ele
+     
      !-------------------------------
      
      INTEGER :: N_quad
 
-     REAL(KIND=8), DIMENSION(:),   POINTER :: w_q
-     REAL(KIND=8), DIMENSION(:,:), POINTER :: n_q
-     REAL(KIND=8), DIMENSION(:,:), POINTER :: phi_q
-     
+     REAL(KIND=8), DIMENSION(:),     POINTER :: w_q
+     REAL(KIND=8), DIMENSION(:,:),   POINTER :: n_q
+     REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
+     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_q
+          
+
+!   CONTAINS
 
   END TYPE face
   !=================================

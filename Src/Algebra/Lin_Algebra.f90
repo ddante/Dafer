@@ -1,6 +1,9 @@
 MODULE Lin_Algebra
 
   IMPLICIT NONE
+  PRIVATE
+
+  PUBLIC :: Cross_Product, inverse
 
 CONTAINS
 
@@ -45,5 +48,107 @@ CONTAINS
     
   END FUNCTION Cross_Product
   !=========================
+
+  !==============================
+  FUNCTION inverse (A) RESULT (B)
+  !==============================
+
+      IMPLICIT NONE
+     
+      REAL(KIND=8), DIMENSION(:,:),     INTENT(IN)  ::  A
+      REAL(KIND=8), DIMENSION(SIZE(A,1),SIZE(A,2))  ::  B
+
+      REAL(KIND=8)  ::  det
+
+
+      IF ( SIZE(A,1) .NE. SIZE(A,2) ) THEN
+         WRITE(*,*) ' Matrix A is not square.' 
+         WRITE(*,*) ' in FUNCTION inverse, MODULE lin_algebra' 
+         WRITE(*,*) ' STOP. ' 
+         STOP
+      ENDIF
+
+      det = determinant(A)
+
+      IF ( det == 0 ) THEN
+         WRITE(*,*) ' Matrix A is singular.' 
+         WRITE(*,*) ' in FUNCTION inverse, MODULE lin_algebra' 
+         WRITE(*,*) ' STOP. ' 
+         STOP
+      ENDIF
+
+      SELECT CASE ( SIZE(A,1) )
+
+      CASE (2) 
+      ! ------
+         B(1,1) =   A(2,2);  B(1,2) = - A(1,2) 
+         B(2,1) = - A(2,1);  B(2,2) =   A(1,1) 
+         B = B/det
+
+      CASE (3)
+      ! ------
+         B(1,1) =   A(2,2)*A(3,3) - A(3,2)*A(2,3)
+         B(1,2) = - A(1,2)*A(3,3) + A(3,2)*A(1,3)
+         B(1,3) =   A(1,2)*A(2,3) - A(2,2)*A(1,3)
+
+         B(2,1) = - A(2,1)*A(3,3) + A(3,1)*A(2,3)
+         B(2,2) =   A(1,1)*A(3,3) - A(3,1)*A(1,3)
+         B(2,3) = - A(1,1)*A(2,3) + A(2,1)*A(1,3)
+
+         B(3,1) =   A(2,1)*A(3,2) - A(3,1)*A(2,2)
+         B(3,2) = - A(1,1)*A(3,2) + A(3,1)*A(1,2)
+         B(3,3) =   A(1,1)*A(2,2) - A(2,1)*A(1,2)
+
+         B = B/det
+
+      CASE DEFAULT
+         WRITE(*,*) ' Matrix of size ', SIZE(A,1), ' not implemented' 
+         WRITE(*,*) ' in FUNCTION inverse, MODULE lin_algebra' 
+         WRITE(*,*) ' STOP. ' 
+         STOP
+         ! CALL ......
+
+      END SELECT
+
+   END FUNCTION inverse
+   !===================
+
+   !====================================
+   FUNCTION determinant (A) RESULT (det)
+   !==================================== 
+
+      IMPLICIT NONE
+     
+      REAL(KIND=8), DIMENSION(:,:), INTENT(IN)  ::  A
+      REAL(KIND=8)  ::  det 
+
+
+      IF ( SIZE(A,1) .NE. SIZE(A,2) ) THEN
+         WRITE(*,*) ' Matrix A is not square.' 
+         WRITE(*,*) ' in FUNCTION determinant, MODULE lin_algebra' 
+         WRITE(*,*) ' STOP. ' 
+         STOP
+      ENDIF
+
+      SELECT CASE ( SIZE(A,1) )
+
+      CASE (2)
+         det = A(1,1)*A(2,2) - A(1,2)*A(2,1)
+
+      CASE (3)
+         det = A(1,1)*(A(2,2)*A(3,3) - A(3,2)*A(2,3))  &
+             - A(1,2)*(A(2,1)*A(3,3) - A(3,1)*A(2,3))  &
+             + A(1,3)*(A(2,1)*A(3,2) - A(3,1)*A(2,2))
+
+      CASE DEFAULT 
+         WRITE(*,*) ' Matrix of size ', SIZE(A,1), ' not implemented' 
+         WRITE(*,*) ' in FUNCTION determinant, MODULE lin_algebra' 
+         WRITE(*,*) ' STOP. ' 
+         STOP
+
+      END SELECT
+
+   END FUNCTION determinant 
+   !=======================
 
 END MODULE Lin_Algebra

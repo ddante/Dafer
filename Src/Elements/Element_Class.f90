@@ -19,23 +19,31 @@ MODULE Element_Class
   !==================================
   TYPE, PUBLIC :: element
 
-     INTEGER :: Type
-     INTEGER :: N_dim = 2
-     INTEGER :: N_verts
-     INTEGER :: N_points
-     INTEGER :: N_Faces
+     INTEGER :: Type      ! Element type
+     INTEGER :: N_dim = 2 ! # spatial dimension
+     INTEGER :: N_verts   ! # vertices
+     INTEGER :: N_points  ! # DoFs
+     INTEGER :: N_Faces   ! # faces
      
-     REAL(KIND=8) :: Volume
+     !REAL(KIND=8) :: Volume
 
-     !-------------------------------
-     
+     !------------------
+     ! Element geometry
+     !-------------------------------------------------
+     ! Vertices coordinates
+     ! Coords(id, j): id = 1, N_dim, j = 1, N_verts
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
+     !-------------------------------------------------
+     ! Nodes (global numeration of the mesh)
+     ! NU(j), j = 1, N_points
      INTEGER,      DIMENSION(:),   POINTER :: NU
-
+     ! Normals for the RD scheme
+     ! rd_n(id, j), id = 1, N_dim, j = 1, N_points
      REAL(KIND=8), DIMENSION(:,:), POINTER :: rd_n
 
-     !-------------------------------
-     
+     !---------------
+     !Faces structure
+     !---------------------------------------------------
      TYPE(faces_ptr), DIMENSION(:), ALLOCATABLE :: faces
      
 !!$   CONTAINS

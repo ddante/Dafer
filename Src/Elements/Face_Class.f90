@@ -9,31 +9,65 @@ MODULE Face_Class
 
   !==================================
   TYPE, PUBLIC :: face
-
-     INTEGER :: Type
-     INTEGER :: N_dim = 2
-     INTEGER :: N_verts
-     INTEGER :: N_points
+     
+     INTEGER :: Type      ! Element type
+     INTEGER :: N_dim = 2 ! # spatial dimension
+     INTEGER :: N_verts   ! # vertices
+     INTEGER :: N_points  ! # DoFs
 
      REAL(KIND=8) :: Area
 
-     !-------------------------------
-
+     !--------------
+     ! Face geometry
+     !-------------------------------------------------
+     ! Vertices coordinates
+     ! Coords(id, j): id = 1, N_dim, j = 1, N_verts
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
+     !-------------------------------------------------
+     ! Nodes (global numeration of the mesh)
+     ! NU(j), j = 1, N_points
+     !-------------------------------------------------
      INTEGER,      DIMENSION(:),   POINTER :: NU
+     !-------------------------------------------------
+     ! Nodes (local numeration of the element)
+     ! l_nu(j), j = 1, N_points
      INTEGER,      DIMENSION(:),   POINTER :: l_nu
+     !-------------------------------------------------
+     ! Segment (global numeration)
      INTEGER                               :: g_seg
-     INTEGER,      DIMENSION(:),   POINTER :: c_ele
+     !-------------------------------------------------
+     ! Element wich share the same face
+     INTEGER                               :: c_ele
      
-     !-------------------------------
-     
+     !------------
+     ! Quadrature
+     !------------------------------------------------------------
+     ! # quadrature points
      INTEGER :: N_quad
-
+     !------------------------------------------------------------
+     ! Quadrature weighs (multiplied by the jacobian)
+     ! w_q(iq), iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:),     POINTER :: w_q
+     ! Physical coordinates of the quadrature points
+     ! xx_q(id, iq), , id = 1, N_dim, iq = 1, N_quad
+     REAL(kind=8), DIMENSION(:,:),   POINTER :: xx_q
+     !------------------------------------------------------------
+     ! Normal versor at quadrature points
+     ! n_q(id, iq), id = 1, N_dim, iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:,:),   POINTER :: n_q
+     !------------------------------------------------------------
+     ! Value of basis functions at the quadrature point
+     ! phi_q(k, iq), k = 1, N_points,  iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
-     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_q
-          
+     !------------------------------------------------------------
+     ! Gradient of element basis functions at the quadrature point
+     ! p_Dphi_x_q(id, k, iq)
+     ! id = 1, N_dim, k = 1, N_points (ele), iq = 1, N_quad
+     !
+     ! 1 -> element to which the face belong to 
+     ! 2 -> adiancen element which share the same face
+     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_1_q
+     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q     
 
 !   CONTAINS
 

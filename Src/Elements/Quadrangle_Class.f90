@@ -38,7 +38,7 @@ CONTAINS
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords    
     INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
-    INTEGER,      DIMENSION(:,:), INTENT(IN) :: n_ele
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     INTEGER :: i, id
@@ -152,7 +152,7 @@ CONTAINS
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
     INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
-    INTEGER,      DIMENSION(:,:), INTENT(IN) :: n_ele
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     TYPE(segment), POINTER :: seg
@@ -189,7 +189,7 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed quadrangle allocation'
        ENDIF
 
-       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(:, if) )
+       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(if) )
 !       CALL seg%init_quadrature()
           
        e%faces(if)%f => seg
@@ -252,7 +252,7 @@ CONTAINS
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
     INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
-    INTEGER,      DIMENSION(:,:), INTENT(IN) :: n_ele
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     TYPE(segment), POINTER :: seg
@@ -291,7 +291,7 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed quadrangle allocation'
        ENDIF
 
-       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(:, if) )
+       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(if) )
 !       CALL seg%init_quadrature()
 
        e%faces(if)%f => seg

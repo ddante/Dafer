@@ -50,7 +50,7 @@ CONTAINS
     INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
     INTEGER,                      INTENT(IN) :: NU_seg
-    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
+    INTEGER,                      INTENT(IN) :: n_ele
     !-------------------------------------------------
 
     INTEGER :: id
@@ -94,7 +94,6 @@ CONTAINS
 
      e%g_seg = NU_seg
 
-     ALLOCATE( e%c_ele(2) )
      e%c_ele = n_ele
      
   END SUBROUTINE initialize_sub
@@ -343,8 +342,13 @@ CONTAINS
     ALLOCATE( e%w_q(e%N_quad) )
     ALLOCATE(   x_q(e%N_quad) )
 
-    ALLOCATE( e%p_Dphi_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    ALLOCATE( e%p_Dphi_2_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
 
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+
+    !-------------------
+    ! Quadrature formula
     !-----------------------------
     x_q(1) = 0.d0
     x_q(2) = 1.d0
@@ -353,15 +357,22 @@ CONTAINS
     e%w_q(2) = 0.5d0
     !-----------------------------
 
-    e%p_Dphi_q = 0.d0
- 
+    e%p_Dphi_1_q = 0.d0
+    e%p_Dphi_2_q = 0.d0
+
+    e%xx_q = 0.d0
+    
     DO j = 1, e%N_quad
 
        DO k = 1, e%N_points
 
           e%phi_q(k, j) = e%basis_function( k, x_q(j) )
 
+          e%xx_q(:, j) = e%xx_q(:, j) + &               
+                         e%basis_function( k, x_q(j) ) * e%Coords(:, k)
+
        ENDDO
+
 
        e%n_q(:, j) = e%normal( x_q(j) )
 
@@ -376,8 +387,8 @@ CONTAINS
 
           DO l = 1, e%N_points
              
-             e%p_Dphi_q(:, k, j) = e%p_Dphi_q(:, k, j) + &
-                                   p_D_phi(:, l, k)*e%phi_q(l, j)
+             e%p_Dphi_1_q(:, k, j) = e%p_Dphi_1_q(:, k, j) + &
+                                     p_D_phi(:, l, k)*e%phi_q(l, j)
  
           ENDDO          
           
@@ -491,25 +502,42 @@ CONTAINS
     ALLOCATE( e%w_q(e%N_quad) )
     ALLOCATE(   x_q(e%N_quad) )
     
-    ALLOCATE( e%p_Dphi_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
-    
+    ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    ALLOCATE( e%p_Dphi_2_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+
+    !-------------------
+    ! Quadrature formula
     !-----------------------------
-    x_q(1) = 0.d0
-    x_q(2) = 1.d0
+    x_q(1) = 0.5d0 * (1.d0 - sqrt(3.d0/5.d0) )
+    x_q(2) = 0.5d0 * (1.d0 + sqrt(3.d0/5.d0) )
     x_q(3) = 0.5d0
+!!$    x_q(1) = 0.d0 
+!!$    x_q(2) = 1.d0
+!!$    x_q(3) = 0.5d0
 
-    e%w_q(1) = 1.d0/6.d0
-    e%w_q(2) = 1.d0/6.d0
-    e%w_q(3) = 4.d0/6.d0
+    e%w_q(1) = 5.d0/18.d0
+    e%w_q(2) = 5.d0/18.d0
+    e%w_q(3) = 8.d0/18.d0
+!!$    e%w_q(1) = 1.d0/6.d0
+!!$    e%w_q(2) = 1.d0/6.d0
+!!$    e%w_q(3) = 4.d0/6.d0
     !-----------------------------
 
-    e%p_Dphi_q = 0.d0
-    
+    e%p_Dphi_1_q = 0.d0
+    e%p_Dphi_2_q = 0.d0
+
+    e%xx_q = 0.d0
+
     DO j = 1, e%N_quad
 
        DO k = 1, e%N_points
 
           e%phi_q(k, j) = e%basis_function( k, x_q(j) )
+
+          e%xx_q(:, j) = e%xx_q(:, j) + &
+                         e%basis_function( k, x_q(j) ) * e%Coords(:, k)
 
        ENDDO
 
@@ -526,8 +554,8 @@ CONTAINS
 
           DO l = 1, e%N_points
              
-             e%p_Dphi_q(:, k, j) = e%p_Dphi_q(:, k, j) + &
-                                   p_D_phi(:, l, k)*e%phi_q(l, j)
+             e%p_Dphi_1_q(:, k, j) = e%p_Dphi_1_q(:, k, j) + &
+                                     p_D_phi(:, l, k)*e%phi_q(l, j)
  
           ENDDO          
           

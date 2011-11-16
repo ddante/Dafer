@@ -10,6 +10,7 @@ MODULE geometry
   TYPE :: type_verts
      INTEGER, DIMENSION(:), POINTER :: verts
      INTEGER, DIMENSION(:), POINTER :: NU_seg
+     INTEGER, DIMENSION(:), POINTER :: n_ele
   END TYPE type_verts
   TYPE(type_verts), DIMENSION(:), ALLOCATABLE :: ele
   !----------------------------------------------------------
@@ -21,7 +22,7 @@ MODULE geometry
 
   !----------------------------------------------------------
 
-  INTEGER, DIMENSION(:,:),   ALLOCATABLE :: edge_ele
+  INTEGER, DIMENSION(:,:), ALLOCATABLE :: edge_ele
   !==========================================================
   
   INTEGER :: N_nodes, N_ele_mesh
@@ -62,7 +63,7 @@ CONTAINS
     INTEGER,      DIMENSION(:),    ALLOCATABLE :: VV
     REAL(KIND=8), DIMENSION(:, :), ALLOCATABLE :: RR
 
-    INTEGER :: Nv, i, j, jt, jq, is1, is2, istat
+    INTEGER :: Nv, i, j, jt, jq, iq, is1, is2, n_ele, istat
     !-----------------------------------------------------
 
     jq = 0
@@ -94,10 +95,9 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initialize( "element", ele(jt)%verts,   &
-                                  rr_nodes(:, ele(jt)%verts), &
-                                  ele(jt)%NU_seg,             &
-                                  edge_ele(:, ele(jt)%NU_seg) )
+             CALL tri%initialize( "element", ele(jt)%verts,     &
+                                  rr_nodes(:, ele(jt)%verts),   &
+                                  ele(jt)%NU_seg, ele(jt)%n_ele )
 
              elements(jt)%p => tri
 
@@ -109,10 +109,9 @@ CONTAINS
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initialize( "element", ele(jt)%verts,   &
-                                  rr_nodes(:, ele(jt)%verts), &
-                                  ele(jt)%NU_seg,             &
-                                  edge_ele(:, ele(jt)%NU_seg) )
+             CALL qua%initialize( "element", ele(jt)%verts,     &
+                                  rr_nodes(:, ele(jt)%verts),   &
+                                  ele(jt)%NU_seg, ele(jt)%n_ele )
 
              elements(jt)%p => qua
 
@@ -130,7 +129,7 @@ CONTAINS
        ALLOCATE( elements(N_elements) )
        
        DO jt = 1, N_elements
-write(*,*) 'G ele', jt
+
           Nv = SIZE(ele(jt)%verts(:))
 
           SELECT CASE(Nv)
@@ -161,9 +160,8 @@ write(*,*) 'G ele', jt
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL tri%initialize( "element", VV, RR,          &
-                                  ele(jt)%NU_seg,             &
-                                  edge_ele(:, ele(jt)%NU_seg) )
+             CALL tri%initialize( "element", VV, RR,            &
+                                  ele(jt)%NU_seg, ele(jt)%n_ele )
 
              elements(jt)%p => tri
 
@@ -201,9 +199,8 @@ write(*,*) 'G ele', jt
              IF(istat /=0) THEN
                 WRITE(*,*) 'ERROR: failed trianlge allocation'
              ENDIF
-             CALL qua%initialize( "element", VV, RR,          &
-                                  ele(jt)%NU_seg,             &
-                                  edge_ele(:, ele(jt)%NU_seg) )
+             CALL qua%initialize( "element", VV, RR,             &
+                                  ele(jt)%NU_seg, ele(jt)%n_ele ) 
 
              elements(jt)%p => qua
 
@@ -216,6 +213,97 @@ write(*,*) 'G ele', jt
     END SELECT
 
     N_dofs = N_dofs + jq
+
+    ! Attach to each face of the elment the data from 
+    ! neighbour elements which share the same face
+    DO jt = 1, N_elements
+
+       DO j = 1, elements(jt)%p%N_faces
+
+          n_ele = elements(jt)%p%faces(j)%f%c_ele
+
+          IF( n_ele /= 0) THEN
+
+             ! Find the local numeration of the face
+             DO i = 1, elements(n_ele)%p%N_faces
+                
+                IF( elements(n_ele)%p%faces(i)%f%g_seg == &
+                       elements(jt)%p%faces(j)%f%g_seg ) EXIT
+                
+             ENDDO
+
+             DO jq = 1, elements(jt)%p%faces(j)%f%N_quad
+
+                ! Find the local numeration of the quadrature
+                ! point
+                DO iq = 1, elements(n_ele)%p%faces(i)%f%N_quad
+
+                   ! warning only the 1th coordinate of the
+                   ! physical coordinates is used
+                   IF( elements(n_ele)%p%faces(i)%f%xx_q(1, iq) == &
+                          elements(jt)%p%faces(j)%f%xx_q(1, jq) ) EXIT
+
+                ENDDO
+                             
+                elements(jt)%p%faces(j)%f%p_Dphi_2_q(:,:, jq) = &
+             elements(n_ele)%p%faces(i)%f%p_Dphi_1_q(:,:, iq)
+
+             ENDDO             
+
+          ENDIF
+
+       ENDDO       
+
+    ENDDO
+
+
+!----------------------------------------------------------------------
+
+!!$   DO jt = 1, N_elements
+!!$write(*,*) 'ELE', jt
+!!$
+!!$       DO j = 1, elements(jt)%p%N_faces
+!!$
+!!$          n_ele = elements(jt)%p%faces(j)%f%c_ele
+!!$
+!!$write(*,*) 'FACE', j, 'N_ELE', n_ele, &
+!!$           'G_FACE', elements(jt)%p%faces(j)%f%g_seg
+!!$
+!!$          IF( n_ele /= 0) THEN
+!!$
+!!$             DO i = 1, elements(n_ele)%p%N_faces
+!!$                
+!!$                IF( elements(n_ele)%p%faces(i)%f%g_seg == &
+!!$                       elements(jt)%p%faces(j)%f%g_seg ) EXIT
+!!$                
+!!$             ENDDO
+!!$
+!!$                do jq = 1, elements(jt)%p%faces(j)%f%N_quad
+!!$
+!!$                write(*,*) 'jq', jq
+!!$                write(*,*)    elements(jt)%p%faces(j)%f%xx_q(:, jq),'k1'
+!!$
+!!$                do iq = 1,  elements(n_ele)%p%faces(i)%f%N_quad
+!!$
+!!$                IF( elements(n_ele)%p%faces(i)%f%xx_q(1, iq) == &
+!!$                       elements(jt)%p%faces(j)%f%xx_q(1, jq) ) EXIT
+!!$
+!!$                enddo
+!!$                write(*,*) 'iq', iq
+!!$                write(*,*) elements(n_ele)%p%faces(i)%f%xx_q(:, iq),'k2'
+!!$
+!!$                enddo
+!!$
+!!$          ENDIF
+!!$
+!!$       ENDDO       
+!!$write(*,*) '----------------------'
+!!$write(*,*)
+!!$    ENDDO
+!!$
+
+
+    DEALLOCATE( ele, edge_ele, rr_nodes )
 
   END SUBROUTINE Init_Elements
   !===========================
@@ -269,10 +357,11 @@ write(*,*) 'G ele', jt
        Nv = SIZE(ele(jt)%verts(:))
 
        DO k = 1, Nv
-          
-          j = MOD(K, MIN(k+1, Nv)) + 1
-         
-          is_1 = ele(jt)%verts(k) 
+
+          i = MOD(k, MIN(k+1, Nv)) + 1
+          j = MOD(i, MIN(k+2, Nv)) + 1
+
+          is_1 = ele(jt)%verts(i) 
           is_2 = ele(jt)%verts(j)
            
           DO kv = 1, v_max
@@ -500,14 +589,14 @@ write(*,*) 'G ele', jt
               ENDIF
 
               IF( SIZE(ele(ele_1)%NU_seg) == 3 ) THEN ! TRIANGLE
-                 IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
-                 IF( (l_1 + l_3) == 0 ) ele(ele_1)%NU_seg(3) = iseg
-                 IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
+                 IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(1) = iseg
+                 IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(3) = iseg
+                 IF( (l_1 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
               ELSE ! QUADRANGLE
-                 IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
-                 IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
-                 IF( (l_3 + l_4) == 0 ) ele(ele_1)%NU_seg(3) = iseg
-                 IF( (l_4 + l_1) == 0 ) ele(ele_1)%NU_seg(4) = iseg
+                 IF( (l_3 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
+                 IF( (l_4 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
+                 IF( (l_1 + l_4) == 0 ) ele(ele_1)%NU_seg(3) = iseg
+                 IF( (l_2 + l_1) == 0 ) ele(ele_1)%NU_seg(4) = iseg
               ENDIF                             
                           
             ENDDO
@@ -534,20 +623,37 @@ write(*,*) 'G ele', jt
             ENDIF            
 
             IF( SIZE(ele(ele_1)%NU_seg) == 3 ) THEN ! TRIANGLE
-               IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
-               IF( (l_1 + l_3) == 0 ) ele(ele_1)%NU_seg(3) = iseg
-               IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
+               IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(1) = iseg
+               IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(3) = iseg
+               IF( (l_1 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
             ELSE ! QUADRANGLE
-               IF( (l_1 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
-               IF( (l_2 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
-               IF( (l_3 + l_4) == 0 ) ele(ele_1)%NU_seg(3) = iseg
-               IF( (l_4 + l_1) == 0 ) ele(ele_1)%NU_seg(4) = iseg
+               IF( (l_3 + l_2) == 0 ) ele(ele_1)%NU_seg(1) = iseg
+               IF( (l_4 + l_3) == 0 ) ele(ele_1)%NU_seg(2) = iseg
+               IF( (l_1 + l_4) == 0 ) ele(ele_1)%NU_seg(3) = iseg
+               IF( (l_2 + l_1) == 0 ) ele(ele_1)%NU_seg(4) = iseg
             ENDIF          
 
          ENDIF
              
       ENDDO
 
+      ! n_ele(jt, i) : neighbour element to jt on the face i
+      DO jt = 1, N_ele_mesh
+
+         ALLOCATE( ele(jt)%n_ele(SIZE(ele(jt)%NU_seg)) )
+                  
+         DO i = 1, SIZE(ele(jt)%NU_seg)
+
+            IF( edge_ele(1, ele(jt)%NU_seg(i)) == jt ) THEN
+               ele(jt)%n_ele(i) = edge_ele(2, ele(jt)%NU_seg(i))
+            ELSE
+               ele(jt)%n_ele(i) = edge_ele(1, ele(jt)%NU_seg(i))
+            ENDIF
+            
+         ENDDO 
+
+      ENDDO
+ 
   END SUBROUTINE find_segments
   !===========================
 

@@ -62,8 +62,6 @@ CONTAINS
        !-----------------------------------
        Phi_tot = total_residual(loc_ele, u)
 
-write(*,*) 'S ele', je
-
        !----------------------------
        ! Distribute the fluctuation
        !-----------------------------------------------------------

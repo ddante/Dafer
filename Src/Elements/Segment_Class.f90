@@ -84,9 +84,13 @@ CONTAINS
      ALLOCATE( e%NU(SIZE(Nodes)) )
      ALLOCATE( e%l_NU(SIZE(loc)) )
           
-     DO id = 1, SIZE(Coords,1)
-        e%Coords(id, :) = Coords(id, :)
-     ENDDO
+!     DO id = 1, SIZE(Coords,1)
+!        e%Coords(id, :) = Coords(id, :)
+!     ENDDO
+
+e%Coords(:, 1) = (/-1.d0, 1.d0/)
+e%Coords(:, 2) = (/ 1.d0, 1.d0/)
+e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
      e%NU = Nodes
 
@@ -218,8 +222,12 @@ CONTAINS
   ! Store the following  quantities at the quadrature points
   !    - value of the basis function
   !    - normal versor
-  !    - weight of the quadrature formula
+  !    - weight of the quadrature formula (multipplied by 
+  !      the jacobian of the transformation)
   !    - value of the gradient of the basis function 
+  !    - physical coordiantes of the quadrature point
+  !
+  ! Compute the lenght of the segment
   !
     IMPLICIT NONE
 
@@ -243,7 +251,11 @@ CONTAINS
        WRITE(*,*) 'STOP'
 
     END SELECT
-    
+
+    ! Area of the element
+    ! warning: straight segment only!!!
+    e%area = SUM( e%w_q)
+
   END SUBROUTINE init_quadrature_sub
   !=================================
 
@@ -343,7 +355,7 @@ CONTAINS
     ALLOCATE(   x_q(e%N_quad) )
 
     ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
-    ALLOCATE( e%p_Dphi_2_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    ALLOCATE( e%p_Du_1_q(e%N_dim, e%N_quad) )
 
     ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
 
@@ -503,7 +515,7 @@ CONTAINS
     ALLOCATE(   x_q(e%N_quad) )
     
     ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
-    ALLOCATE( e%p_Dphi_2_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    ALLOCATE( e%p_Du_1_q(e%N_dim, e%N_quad) )
 
     ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
 

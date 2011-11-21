@@ -15,14 +15,18 @@ MODULE Face_Class
      INTEGER :: N_verts   ! # vertices
      INTEGER :: N_points  ! # DoFs
 
-     REAL(KIND=8) :: Area
-
      !--------------
      ! Face geometry
      !-------------------------------------------------
      ! Vertices coordinates
      ! Coords(id, j): id = 1, N_dim, j = 1, N_verts
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
+     !-------------------------------------------------
+     ! Area of the face
+     REAL(KIND=8) :: Area
+
+     !--------------
+     ! Face Topology
      !-------------------------------------------------
      ! Nodes (global numeration of the mesh)
      ! NU(j), j = 1, N_points
@@ -60,14 +64,28 @@ MODULE Face_Class
      ! phi_q(k, iq), k = 1, N_points,  iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
      !------------------------------------------------------------
+
+     !--------------
+     ! CIP structure
+     !------------------------------------------------------------
+     ! 1 -> element to which the face belong to 
+     ! 2 -> adiancen element which share the same face
+     !
      ! Gradient of element basis functions at the quadrature point
      ! p_Dphi_x_q(id, k, iq)
      ! id = 1, N_dim, k = 1, N_points (ele), iq = 1, N_quad
-     !
-     ! 1 -> element to which the face belong to 
-     ! 2 -> adiancen element which share the same face
      REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_1_q
      REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q     
+     !------------------------------------------------------------
+     ! Gradient of the solution at the quadrature point
+     ! p_u_x_q(id, iq),  id = 1, N_dim, iq = 1, N_quad
+     REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_1_q
+     REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_2_q
+     !------------------------------------------------------------
+     ! Correspondence between the local numeration of two elements
+     ! with share the same face
+     ! loc_con(k), k = 1, N_points (ele)
+     INTEGER, DIMENSION(:), POINTER :: loc_con
 
 !   CONTAINS
 

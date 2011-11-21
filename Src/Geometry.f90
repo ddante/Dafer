@@ -63,7 +63,9 @@ CONTAINS
     INTEGER,      DIMENSION(:),    ALLOCATABLE :: VV
     REAL(KIND=8), DIMENSION(:, :), ALLOCATABLE :: RR
 
-    INTEGER :: Nv, i, j, jt, jq, iq, is1, is2, n_ele, istat
+    REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q 
+
+    INTEGER :: Nv, i, j, jq, jt, is1, is2, istat
     !-----------------------------------------------------
 
     jq = 0
@@ -141,7 +143,7 @@ CONTAINS
              ALLOCATE( VV(6), RR(N_dim, 6) )
 
              VV(1:3) = ele(jt)%verts(:)
-             VV(4:6) = ele(jt)%NU_seg(:) + N_nodes
+             VV(4:6) = ele(jt)%NU_seg( (/3,1,2/)  ) + N_nodes
 
              DO i = 1, Nv
 
@@ -154,7 +156,7 @@ CONTAINS
 
                 RR(:, Nv+i) = 0.5d0*( rr_nodes(:, is1) + rr_nodes(:, is2) )
 
-             ENDDO          
+             ENDDO
 
              ALLOCATE(tri, STAT=istat)
              IF(istat /=0) THEN
@@ -176,7 +178,7 @@ CONTAINS
              ALLOCATE( VV(9), RR(N_dim, 9) )
 
              VV(1:4) = ele(jt)%verts(:)
-             VV(5:8) = ele(jt)%NU_seg(:) + N_nodes
+             VV(5:8) = ele(jt)%NU_seg( (/4,1,2,3/) ) + N_nodes
              VV(9)   = jq + N_nodes + N_seg
 
              DO i = 1, Nv
@@ -214,8 +216,29 @@ CONTAINS
 
     N_dofs = N_dofs + jq
 
-    ! Attach to each face of the elment the data from 
-    ! neighbour elements which share the same face
+    !*************************
+    CALL loc2loc_connectivity()
+
+    DEALLOCATE( ele, edge_ele, rr_nodes )
+    
+  END SUBROUTINE Init_Elements
+  !===========================
+
+  !================================
+  SUBROUTINE loc2loc_connectivity()
+  !================================
+  !
+  ! Attach to each face of the elment the data from 
+  ! neighbour elements which share the same face
+
+    IMPLICIT NONE
+
+    REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q
+
+    INTEGER :: jt, j, n_ele, i, iq, jq, k1, k2
+    !-----------------------------------------
+
+
     DO jt = 1, N_elements
 
        DO j = 1, elements(jt)%p%N_faces
@@ -232,81 +255,99 @@ CONTAINS
                 
              ENDDO
 
+             p_Dphi_2_q => elements(n_ele)%p%faces(i)%f%p_Dphi_1_q
+
+             ! Gradient of basis functions
+             ALLOCATE( elements(jt)%p%faces(j)%f%p_Dphi_2_q( &
+                         SIZE(p_Dphi_2_q, 1), &
+                         SIZE(p_Dphi_2_q, 2), &
+                         SIZE(p_Dphi_2_q, 3)  ) &
+                     )
+
+             ! Gradient of the solution        
+             ALLOCATE( elements(jt)%p%faces(j)%f%p_Du_2_q( &
+                         SIZE(p_Dphi_2_q, 1), &
+                         SIZE(p_Dphi_2_q, 3)  ) &
+                     )
+                                            
              DO jq = 1, elements(jt)%p%faces(j)%f%N_quad
 
                 ! Find the local numeration of the quadrature
-                ! point
+                ! points
                 DO iq = 1, elements(n_ele)%p%faces(i)%f%N_quad
 
-                   ! warning only the 1th coordinate of the
-                   ! physical coordinates is used
-                   IF( elements(n_ele)%p%faces(i)%f%xx_q(1, iq) == &
-                          elements(jt)%p%faces(j)%f%xx_q(1, jq) ) EXIT
+                   IF( SUM( elements(n_ele)%p%faces(i)%f%xx_q(:, iq) - &
+                               elements(jt)%p%faces(j)%f%xx_q(:, jq) ) == 0.d0 ) EXIT
 
                 ENDDO
                              
-                elements(jt)%p%faces(j)%f%p_Dphi_2_q(:,:, jq) = &
-             elements(n_ele)%p%faces(i)%f%p_Dphi_1_q(:,:, iq)
+                elements(jt)%p%faces(j)%f%p_Dphi_2_q(:,:, jq) = p_Dphi_2_q(:,:, iq)
 
              ENDDO             
 
+             NULLIFY( p_Dphi_2_q )
+
+             !\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+             ! Correspondence between the local numeration of the DOFs\
+             ! of two neighbouring elements which share the face 'j'  \
+             !\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+             ALLOCATE( elements(jt)%p%faces(j)%f%loc_con( &
+                       elements(jt)%p%N_points) &
+                     )
+
+             elements(jt)%p%faces(j)%f%loc_con = 0
+
+             DO k1 = 1, elements(jt)%p%N_points
+
+                DO k2 = 1, elements(n_ele)%p%N_points
+
+                   IF( SUM( elements(n_ele)%p%Coords(:, k2) - &
+                               elements(jt)%p%Coords(:, k1) ) == 0.d0) THEN
+
+                      elements(jt)%p%faces(j)%f%loc_con(k1) = k2
+                      
+                   ENDIF
+
+                ENDDO
+                
+             ENDDO
+             !\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+           
+             
+          ELSE ! No neighbouring element (boundary face)
+
+             p_Dphi_2_q => elements(jt)%p%faces(j)%f%p_Dphi_1_q
+
+             ! Gradient of basis functions             
+             ALLOCATE( elements(jt)%p%faces(j)%f%p_Dphi_2_q( &
+                         SIZE(p_Dphi_2_q, 1), &
+                         SIZE(p_Dphi_2_q, 2), &
+                         SIZE(p_Dphi_2_q, 3)  ) &
+                      )
+
+             ! Gradient of the solution        
+             ALLOCATE( elements(jt)%p%faces(j)%f%p_Du_2_q( &
+                         SIZE(p_Dphi_2_q, 1), &
+                         SIZE(p_Dphi_2_q, 3)  ) &
+                     )
+
+             elements(jt)%p%faces(j)%f%p_Dphi_2_q = 0.d0
+
+             ALLOCATE( elements(jt)%p%faces(j)%f%loc_con(elements(jt)%p%N_points) )
+
+             elements(jt)%p%faces(j)%f%loc_con = 0
+             
+             NULLIFY( p_Dphi_2_q )
+
           ENDIF
+          
 
        ENDDO       
 
     ENDDO
 
-
-!----------------------------------------------------------------------
-
-!!$   DO jt = 1, N_elements
-!!$write(*,*) 'ELE', jt
-!!$
-!!$       DO j = 1, elements(jt)%p%N_faces
-!!$
-!!$          n_ele = elements(jt)%p%faces(j)%f%c_ele
-!!$
-!!$write(*,*) 'FACE', j, 'N_ELE', n_ele, &
-!!$           'G_FACE', elements(jt)%p%faces(j)%f%g_seg
-!!$
-!!$          IF( n_ele /= 0) THEN
-!!$
-!!$             DO i = 1, elements(n_ele)%p%N_faces
-!!$                
-!!$                IF( elements(n_ele)%p%faces(i)%f%g_seg == &
-!!$                       elements(jt)%p%faces(j)%f%g_seg ) EXIT
-!!$                
-!!$             ENDDO
-!!$
-!!$                do jq = 1, elements(jt)%p%faces(j)%f%N_quad
-!!$
-!!$                write(*,*) 'jq', jq
-!!$                write(*,*)    elements(jt)%p%faces(j)%f%xx_q(:, jq),'k1'
-!!$
-!!$                do iq = 1,  elements(n_ele)%p%faces(i)%f%N_quad
-!!$
-!!$                IF( elements(n_ele)%p%faces(i)%f%xx_q(1, iq) == &
-!!$                       elements(jt)%p%faces(j)%f%xx_q(1, jq) ) EXIT
-!!$
-!!$                enddo
-!!$                write(*,*) 'iq', iq
-!!$                write(*,*) elements(n_ele)%p%faces(i)%f%xx_q(:, iq),'k2'
-!!$
-!!$                enddo
-!!$
-!!$          ENDIF
-!!$
-!!$       ENDDO       
-!!$write(*,*) '----------------------'
-!!$write(*,*)
-!!$    ENDDO
-!!$
-
-
-    DEALLOCATE( ele, edge_ele, rr_nodes )
-
-  END SUBROUTINE Init_Elements
-  !===========================
+  END SUBROUTINE loc2loc_connectivity
+  !==================================
   
   !=========================
   SUBROUTINE find_segments()
@@ -360,10 +401,12 @@ CONTAINS
 
           i = MOD(k, MIN(k+1, Nv)) + 1
           j = MOD(i, MIN(k+2, Nv)) + 1
-
-          is_1 = ele(jt)%verts(i) 
+          !j = MOD(k, MIN(k+1, Nv)) + 1
+          !is_1 = ele(jt)%verts(k)
+          
+          is_1 = ele(jt)%verts(i)          
           is_2 = ele(jt)%verts(j)
-           
+
           DO kv = 1, v_max
                          
              IF ( J_CON(is_1, kv, 1) == 0 ) GOTO 110

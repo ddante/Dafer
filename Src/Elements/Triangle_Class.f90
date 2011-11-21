@@ -122,6 +122,14 @@ CONTAINS
         e%rd_n(:, i) = rd_normal_fun(e, i)
      ENDDO
 
+
+!!$     ! Volume of the element
+!!$     e%Volume = 0.d0
+!!$     DO i = 1, e%N_faces
+!!$        e%Volume = e%Volume + SUM
+!!$     ENDDO
+     
+     
   END SUBROUTINE initialize_sub
   !============================
 
@@ -487,50 +495,13 @@ CONTAINS
 
     CASE DEFAULT
 
-       WRITE(*,*) 'ERROR: not supported Dof in Segment gradient'
+       WRITE(*,*) 'ERROR: not supported Dof in Quadrangle gradient'
        STOP
 
     END SELECT
     
   END FUNCTION gradient_ref_TRI_P1
   !===============================
-
-  !=================================================
-  FUNCTION gradient_TRI_P1(e, i, xi) RESULT(D_psi_i)
-  !=================================================
-
-    IMPLICIT NONE
-
-    CLASS(triangle)                        :: e
-    INTEGER,                    INTENT(IN) :: i
-    REAL(KIND=8), DIMENSION(:), INTENT(IN) :: xi
-
-    REAL(KIND=8), DIMENSION(2) :: D_psi_i
-    !-------------------------------------------
-
-    SELECT CASE(i)
-
-    CASE(1)
-
-       D_psi_i = (/ -1.d0, -1.d0 /)
-       
-    CASE(2)
-
-       D_psi_i = (/ 1.d0, 0.d0 /)
-       
-    CASE(3)
-
-       D_psi_i = (/ 0.d0, 1.d0 /)
-
-    CASE DEFAULT
-
-       WRITE(*,*) 'ERROR: not supported Dof in Segment gradient'
-       STOP
-
-    END SELECT
-    
-  END FUNCTION gradient_TRI_P1
-  !===========================
 
   !===========================================
   FUNCTION rd_normal_TRI_P1(e, k) RESULT(nn_k)
@@ -754,7 +725,7 @@ CONTAINS
 
     CASE DEFAULT
 
-       WRITE(*,*) 'ERROR: not supported Dof in Segment gradient'
+       WRITE(*,*) 'ERROR: not supported Dof in Quadrangle gradient'
        STOP
 
     END SELECT

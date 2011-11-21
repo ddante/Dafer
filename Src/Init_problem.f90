@@ -1,7 +1,7 @@
 MODULE init_problem
 
-  USE Geometry,       ONLY: N_dofs, elements
-  USE Models,         ONLY: strong_bc, detect_source
+  USE Geometry,       ONLY: N_dofs, elements,  N_elements
+  USE Models,         ONLY: strong_bc, detect_source,  exact_solution
 
   IMPLICIT NONE
 
@@ -47,6 +47,8 @@ CONTAINS
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE, INTENT(INOUT) :: rhs
       !-------------------------------------------------------------
       
+integer :: jt, i
+
       INTEGER :: ierror, UNIT
       !-------------------------------------------------------------
 
@@ -61,6 +63,12 @@ CONTAINS
       theta = 1.d0;  theta_t = 10.d0
 
       with_source = detect_source(pb_type)
+
+DO jt = 1, N_elements
+DO i = 1, SIZE(elements(jt)%p%NU)
+uu(elements(jt)%p%NU(i)) = exact_solution(pb_type, elements(jt)%p%Coords(:, i), visc)
+ENDDO
+ENDDO
      
       CALL strong_bc(pb_type, visc, uu, rhs)
 

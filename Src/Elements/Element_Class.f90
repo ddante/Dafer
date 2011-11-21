@@ -25,8 +25,6 @@ MODULE Element_Class
      INTEGER :: N_points  ! # DoFs
      INTEGER :: N_Faces   ! # faces
      
-     !REAL(KIND=8) :: Volume
-
      !------------------
      ! Element geometry
      !-------------------------------------------------
@@ -34,11 +32,19 @@ MODULE Element_Class
      ! Coords(id, j): id = 1, N_dim, j = 1, N_verts
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
      !-------------------------------------------------
+     ! Volume of the face
+     REAL(KIND=8) :: Volume
+
+     !--------------
+     ! Element Topology
+     !-------------------------------------------------
      ! Nodes (global numeration of the mesh)
      ! NU(j), j = 1, N_points
      INTEGER,      DIMENSION(:),   POINTER :: NU
+     !-------------------------------------------------
      ! Normals for the RD scheme
      ! rd_n(id, j), id = 1, N_dim, j = 1, N_points
+     !-------------------------------------------------
      REAL(KIND=8), DIMENSION(:,:), POINTER :: rd_n
 
      !---------------

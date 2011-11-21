@@ -61,12 +61,12 @@ CONTAINS
           i_ff = i_ff + w(iq) * DOT_PRODUCT(ff_q, n(:, iq) )
 
        ENDDO
-
+       
+       NULLIFY(N_quad, N_points, loc, p, w, n)
+       
     ENDDO
 
     DEALLOCATE( ff_q )
-
-    NULLIFY(N_quad, N_points, loc, p, w, n)
 
   END FUNCTION oInt_n
   !==================  

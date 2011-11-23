@@ -17,29 +17,29 @@ MODULE Face_Class
 
      !--------------
      ! Face geometry
-     !-------------------------------------------------
+     !------------------------------------------------------------
      ! Vertices coordinates
      ! Coords(id, j): id = 1, N_dim, j = 1, N_verts
      REAL(KIND=8), DIMENSION(:,:), POINTER :: Coords
-     !-------------------------------------------------
+     !------------------------------------------------------------
      ! Area of the face
      REAL(KIND=8) :: Area
 
      !--------------
      ! Face Topology
-     !-------------------------------------------------
+     !------------------------------------------------------------
      ! Nodes (global numeration of the mesh)
      ! NU(j), j = 1, N_points
-     !-------------------------------------------------
+     !------------------------------------------------------------
      INTEGER,      DIMENSION(:),   POINTER :: NU
-     !-------------------------------------------------
+     !------------------------------------------------------------
      ! Nodes (local numeration of the element)
      ! l_nu(j), j = 1, N_points
      INTEGER,      DIMENSION(:),   POINTER :: l_nu
-     !-------------------------------------------------
+     !------------------------------------------------------------
      ! Segment (global numeration)
      INTEGER                               :: g_seg
-     !-------------------------------------------------
+     !------------------------------------------------------------
      ! Element wich share the same face
      INTEGER                               :: c_ele
      
@@ -52,6 +52,11 @@ MODULE Face_Class
      ! Quadrature weighs (multiplied by the jacobian)
      ! w_q(iq), iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:),     POINTER :: w_q
+     !------------------------------------------------------------
+     ! Reference Coordinates of the quadrature points
+     ! xx_q(ik, iq), , ik = 1, N_dim_ele, iq = 1, N_quad
+     REAL(kind=8), DIMENSION(:,:),   POINTER :: x_q
+     !------------------------------------------------------------
      ! Physical coordinates of the quadrature points
      ! xx_q(id, iq), , id = 1, N_dim, iq = 1, N_quad
      REAL(kind=8), DIMENSION(:,:),   POINTER :: xx_q

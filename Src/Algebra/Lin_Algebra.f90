@@ -3,7 +3,7 @@ MODULE Lin_Algebra
   IMPLICIT NONE
   PRIVATE
 
-  PUBLIC :: Cross_Product, inverse
+  PUBLIC :: Cross_Product, inverse, determinant
 
 CONTAINS
 
@@ -113,9 +113,9 @@ CONTAINS
    END FUNCTION inverse
    !===================
 
-   !====================================
-   FUNCTION determinant (A) RESULT (det)
-   !==================================== 
+   !===================================
+   FUNCTION determinant(A) RESULT (det)
+   !=================================== 
 
       IMPLICIT NONE
      

@@ -13,37 +13,44 @@ MODULE Trianlge_Class
 
    CONTAINS
 
-     PROCEDURE, PUBLIC :: initialize     => initialize_sub
-     PROCEDURE, PUBLIC :: basis_function => basis_function_fun
-     PROCEDURE, PUBLIC :: gradient_ref   => gradient_ref_fun
-     PROCEDURE, PUBLIC :: gradient       => gradient_fun
-     PROCEDURE, PUBLIC :: face_trace     => face_trace_fun
-     PROCEDURE, PUBLIC :: gradient_trace => gradient_trace_sub
+     PROCEDURE, PUBLIC :: initialize        => initialize_sub
+!!$  PROCEDURE, PUBLIC :: volume_quadrature => volume_quadrature_sub
+!!$  PROCEDURE, PUBLIC :: face_quadrature   => volume_quadrature_sub
+
      
   END TYPE triangle
   !=========================================
 
   PRIVATE :: initialize_sub
+
+  PRIVATE :: init_faces
   PRIVATE :: init_faces_TRI_P1
   PRIVATE :: init_faces_TRI_P2
 
-  PRIVATE :: basis_function_fun
+!!$  PRIVATE :: volume_quadrature_sub
+!!$  PRIVATE :: init_volume_quadrature_TRI_P1
+!!$  PRIVATE :: init_volume_quadrature_TRI_P2
+
+  PRIVATE :: basis_function
   PRIVATE :: basis_function_TRI_P1
   PRIVATE :: basis_function_TRI_P2
-
-  PRIVATE :: gradient_ref_fun
+  
+  PRIVATE :: gradient
+  
+  PRIVATE :: gradient_ref
   PRIVATE :: gradient_ref_TRI_P1
-  PRIVATE :: gradient_ref_TRI_P2
+  PRIVATE :: gradient_ref_TRI_P2 
 
-  PRIVATE :: gradient_fun
-
-  PRIVATE :: face_trace_fun
+  PRIVATE :: gradient_trace
+  PRIVATE :: face_trace
   PRIVATE :: face_trace_TRI_P1
   PRIVATE :: face_trace_TRI_P2  
 
-  PRIVATE :: rd_normal_fun
+  PRIVATE :: rd_normal
   PRIVATE :: rd_normal_TRI_P1
   PRIVATE :: rd_normal_TRI_P2
+
+  PRIVATE :: Compute_Jacobian
 
 CONTAINS
 
@@ -87,11 +94,6 @@ CONTAINS
        e%N_verts  = 3      ! # Vertices 
        e%N_points = 3      ! # DoFs       
 
-       IF( mode == "element") THEN
-          ! FACES
-          CALL init_faces_TRI_P1(e, Nodes, Coords, NU_seg, n_ele)
-       ENDIF
-       
     CASE(6)
 
        !---------
@@ -101,11 +103,6 @@ CONTAINS
        e%N_verts  = 3      ! # Vertices 
        e%N_points = 6      ! # DoFs
 
-       IF( mode == "element") THEN
-          ! FACES
-          CALL init_faces_TRI_P2(e, Nodes, Coords, NU_seg, n_ele)
-       ENDIF
-   
      CASE DEFAULT
 
         WRITE(*,*) 'ERROR: Unsupported Triangle type'
@@ -113,29 +110,142 @@ CONTAINS
 
      END SELECT
 
-     !--------------------------
-     ! Normals for the RD scheme
-     !--------------------------------------
-     ALLOCATE( e%rd_n(e%N_dim, e%N_points) )
+     IF( mode == "element") THEN
 
-     DO i = 1, e%N_points
-        e%rd_n(:, i) = rd_normal_fun(e, i)
-     ENDDO
+        CALL init_faces(e, Nodes, Coords, NU_seg, n_ele)
 
+        CALL volume_quadrature(e)
+        
+        !--------------------------
+        ! Normals for the RD scheme
+        !--------------------------------------
+        ALLOCATE( e%rd_n(e%N_dim, e%N_points) )
 
-!!$     ! Volume of the element
-!!$     e%Volume = 0.d0
-!!$     DO i = 1, e%N_faces
-!!$        e%Volume = e%Volume + SUM
-!!$     ENDDO
-     
-     
+        DO i = 1, e%N_points
+           e%rd_n(:, i) = rd_normal(e, i)
+        ENDDO
+
+     ENDIF
+         
   END SUBROUTINE initialize_sub
   !============================
 
-  !==================================================
-  FUNCTION basis_function_fun(e, i, xi) RESULT(psi_i)
-  !==================================================
+  !=====================================================
+  SUBROUTINE init_faces(e, Nodes, Coords, NU_seg, n_ele)
+  !=====================================================
+
+    IMPLICIT NONE
+    
+    CLASS(triangle)                          :: e
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
+    REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
+    !-------------------------------------------------
+
+    SELECT CASE(e%Type)
+              
+    CASE(TRI_P1)
+
+       CALL init_faces_TRI_P1(e, Nodes, Coords, NU_seg, n_ele)
+       
+    CASE(TRI_P2)
+
+       CALL init_faces_TRI_P2(e, Nodes, Coords, NU_seg, n_ele)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Tiangle type for face initialization'
+       WRITE(*,*) 'STOP'
+
+    END SELECT 
+
+  END SUBROUTINE init_faces
+  !=========================
+
+  !==============================
+  SUBROUTINE volume_quadrature(e)
+  !==============================
+  !
+  ! Store the following  quantities at the quadrature points
+  !    - value of the basis function
+  !    - normal versor
+  !    - weight of the quadrature formula (multipplied by 
+  !      the jacobian of the transformation)
+  !    - value of the trace of the gradient of basis functions
+  !    - physical coordiantes of the quadrature point
+  !
+  ! Compute the lenght of the segment
+  !
+    IMPLICIT NONE
+
+    CLASS(triangle) :: e
+    !-----------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: JJ
+
+    INTEGER :: iq, k
+    !-----------------------------------------------
+
+    SELECT CASE(e%Type)
+
+    CASE(TRI_P1)
+
+       CALL init_quadrature_TRI_P1(e)
+       
+    CASE(TRI_P2)
+
+       CALL init_quadrature_TRI_P2(e)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Triangle type for quadrature'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+    !-------------------------------------    
+    ! Attach data to the quadrature points
+    !---------------------------------------------------
+    ALLOCATE( JJ(e%N_dim, e%N_dim) )
+
+    DO iq = 1, e%N_quad
+
+       DO k = 1, e%N_points
+
+          e%phi_q(k, iq) = basis_function( e, k, e%x_q(iq, :) )
+
+          e%xx_q(:, iq) = e%xx_q(:, iq) + &               
+                         basis_function( e, k, e%x_q(iq, :) ) * e%Coords(:, k)
+
+          e%D_phi_q(:, k, iq) = gradient( e, k, e%x_q(iq, :) )
+
+       ENDDO
+
+       ! warning: not optimized, jacobian computed twice       
+       JJ = Compute_Jacobian( e, e%x_q(iq, :) )
+
+       e%w_q(iq) = e%w_q(iq) * determinant(JJ)
+      
+    ENDDO
+
+    DEALLOCATE( JJ )
+
+    ! Area of the element
+    e%volume = SUM( e%w_q )    
+
+  END SUBROUTINE volume_quadrature
+  !===============================
+
+!*******************************************************************************
+!*******************************************************************************
+!                         COMPLEMENTARY FUNCTIONS                              !
+!*******************************************************************************
+!*******************************************************************************
+
+  !==============================================
+  FUNCTION basis_function(e, i, xi) RESULT(psi_i)
+  !==============================================
 
     IMPLICIT NONE
 
@@ -163,12 +273,12 @@ CONTAINS
 
     END SELECT
 
-  END FUNCTION basis_function_fun
-  !==============================
+  END FUNCTION basis_function
+  !==========================
 
-  !==================================================
-  FUNCTION gradient_ref_fun(e, i, xi) RESULT(D_psi_i)
-  !==================================================
+  !==============================================
+  FUNCTION gradient_ref(e, i, xi) RESULT(D_psi_i)
+  !==============================================
 
     IMPLICIT NONE
 
@@ -196,12 +306,12 @@ CONTAINS
 
     END SELECT    
 
-  END FUNCTION gradient_ref_fun
-  !============================
+  END FUNCTION gradient_ref
+  !========================
 
-  !==============================================
-  FUNCTION gradient_fun(e, i, xi) RESULT(D_psi_i)
-  !==============================================
+  !==========================================
+  FUNCTION gradient(e, i, xi) RESULT(D_psi_i)
+  !==========================================
   !
   ! Compute the gradient of the shape function i
   ! on the actual triangle at the point of baricentric
@@ -216,45 +326,28 @@ CONTAINS
     REAL(KIND=8), DIMENSION(e%N_dim) :: D_psi_i
     !-------------------------------------------
 
-    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: d
     REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: JJ, inv_J
 
     INTEGER :: k, l, m
     !---------------------------------------------
 
-    ALLOCATE( d(e%N_dim, e%N_points) )
-
-    DO m = 1, e%N_points
-       d(:, m) = e%gradient_ref(m, xi)
-    ENDDO
-
-    ! Construction of the Jacobian matrix
-    ALLOCATE( JJ(e%N_dim, e%N_dim) )
-    
-    DO k = 1, e%N_dim
-
-       DO l = 1, e%N_dim
-
-          JJ(l, k) = SUM( e%Coords(k, :) * d(l, :) )
-
-       ENDDO
-
-    ENDDO
-
+    ALLOCATE(    JJ(e%N_dim, e%N_dim) )
     ALLOCATE( inv_J(e%N_dim, e%N_dim) )
+        
+    JJ = compute_Jacobian( e, xi )
     
     inv_J = inverse(JJ)
 
-    D_Psi_i = MATMUL( inv_J, d(:, i) )
+    D_Psi_i = MATMUL( inv_J, gradient_ref(e, i, xi) )
 
-    DEALLOCATE( d, JJ, inv_J )
+    DEALLOCATE( JJ, inv_J )
 
-  END FUNCTION gradient_fun
-  !========================
+  END FUNCTION gradient
+  !====================
   
-  !========================================
-  FUNCTION rd_normal_fun(e, i) RESULT(nn_i)
-  !========================================
+  !====================================
+  FUNCTION rd_normal(e, i) RESULT(nn_i)
+  !====================================
 
     IMPLICIT NONE
 
@@ -281,12 +374,12 @@ CONTAINS
 
     END SELECT
     
-  END FUNCTION rd_normal_fun
-  !=========================
+  END FUNCTION rd_normal
+  !=====================
 
-  !============================================
-  SUBROUTINE gradient_trace_sub(e, if, p_D_phi)
-  !============================================
+  !========================================
+  SUBROUTINE gradient_trace(e, if, p_D_phi)
+  !========================================
   !
   ! Compute the trace of the gradients of all shape
   ! functions on the face if
@@ -307,13 +400,13 @@ CONTAINS
 
     ALLOCATE( xi_f(N_points_face, 3) )
 
-    xi_f = e%face_trace(if)    
+    xi_f = face_trace(e, if)
 
     DO k = 1, N_points_face      
 
        DO i = 1, N_points_ele
 
-          p_D_phi(:, k, i) = e%gradient( i, xi_f(k,:) )
+          p_D_phi(:, k, i) = gradient( e, i, xi_f(k,:) )
 
        ENDDO
 
@@ -321,12 +414,12 @@ CONTAINS
     
     DEALLOCATE(xi_f)    
 
-  END SUBROUTINE gradient_trace_sub
-  !================================
+  END SUBROUTINE gradient_trace
+  !============================
 
-  !==========================================
-  FUNCTION face_trace_fun(e, if) RESULT(xi_f)
-  !==========================================
+  !======================================
+  FUNCTION face_trace(e, if) RESULT(xi_f)
+  !======================================
   !
   ! Compute the baricentric coordinates on the
   ! face if
@@ -360,8 +453,47 @@ CONTAINS
 
     END SELECT 
 
-  END FUNCTION face_trace_fun
-  !==========================
+  END FUNCTION face_trace
+  !======================
+
+  !==========================================
+  FUNCTION Compute_Jacobian(e, xi) RESULT(JJ)
+  !==========================================
+
+    IMPLICIT NONE
+
+    CLASS(triangle)                         :: e
+    REAL(KIND=8),  DIMENSION(:), INTENT(IN) :: xi
+
+    REAL(KIND=8),  DIMENSION(e%N_dim, e%N_dim) :: JJ
+    !------------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: d
+
+    INTEGER :: k, l, m
+    !------------------------------------------------
+
+    ALLOCATE( d(e%N_dim, e%N_points) )
+
+    DO m = 1, e%N_points
+       d(:, m) = gradient_ref(e, m, xi)
+    ENDDO
+
+    ! Construction of the Jacobian matrix
+    DO k = 1, e%N_dim
+
+       DO l = 1, e%N_dim
+
+          JJ(l, k) = SUM( e%Coords(k, :) * d(l, :) )
+
+       ENDDO
+
+    ENDDO
+
+    DEALLOCATE( d )
+    
+  END FUNCTION Compute_Jacobian
+  !============================  
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -422,11 +554,11 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed trianlge faces allocation'
        ENDIF
        
-       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(if) )
+       CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
 
-       CALL e%gradient_trace(if, p_D_phi)
+       CALL gradient_trace(e, if, p_D_phi)
 
-       CALL seg%init_quadrature(p_D_phi)
+       CALL seg%face_quadrature(p_D_phi)
 
        e%faces(if)%f => seg
           
@@ -495,7 +627,7 @@ CONTAINS
 
     CASE DEFAULT
 
-       WRITE(*,*) 'ERROR: not supported Dof in Quadrangle gradient'
+       WRITE(*,*) 'ERROR: not supported Dof in Triangle gradient'
        STOP
 
     END SELECT
@@ -568,6 +700,47 @@ CONTAINS
   END FUNCTION face_trace_TRI_P1
   !=============================
 
+  !===================================
+  SUBROUTINE init_quadrature_TRI_P1(e)
+  !===================================
+
+    IMPLICIT NONE
+
+    CLASS(triangle) :: e
+    !-------------------
+
+    e%N_quad = 3
+
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%D_phi_q(e%N_dim, e%N_points, e%N_quad) )
+
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 3) )
+
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+    
+    !-------------------
+    ! Quadrature formula
+    !--------------------------------------
+!    e%x_q(1, :) = (/ 0.5d0, 0.5d0, 0.d0  /)
+!    e%x_q(2, :) = (/ 0.0d0, 0.5d0, 0.5d0 /)
+!    e%x_q(3, :) = (/ 0.5d0, 0.0d0, 0.5d0 /)
+     e%x_q(1, :) = (/ 1.d0, 0.d0, 0.d0  /)
+     e%x_q(2, :) = (/ 0.d0, 1.d0, 0.d0 /)
+     e%x_q(3, :) = (/ 0.d0, 0.d0, 1.d0 /)
+
+     e%w_q(:) = 1.0d0 / 3.d0
+
+     e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|  
+     !--------------------------------------
+     
+    
+    e%xx_q = 0.d0
+    
+  END SUBROUTINE init_quadrature_TRI_P1
+  !====================================
+
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%%     TRIANGLE P2    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -629,10 +802,11 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed trianlge allocation'
        ENDIF
 
-       CALL e%gradient_trace(if, p_D_phi)
+       CALL gradient_trace(e, if, p_D_phi)
 
-       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(if) )
-       CALL seg%init_quadrature(p_D_phi)
+       CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
+
+       CALL seg%face_quadrature(p_D_phi)
          
        e%faces(if)%f => seg
           
@@ -725,7 +899,7 @@ CONTAINS
 
     CASE DEFAULT
 
-       WRITE(*,*) 'ERROR: not supported Dof in Quadrangle gradient'
+       WRITE(*,*) 'ERROR: not supported Dof in Triangle gradient'
        STOP
 
     END SELECT
@@ -823,5 +997,54 @@ CONTAINS
     
   END FUNCTION face_trace_TRI_P2
   !=============================
+
+  !===================================
+  SUBROUTINE init_quadrature_TRI_P2(e)
+  !===================================
+
+    IMPLICIT NONE
+
+    CLASS(triangle) :: e
+    !----------------------------------------------------
+
+    REAL(KIND=8) :: alpha_1, alpha_2, beta_1,beta_2 
+    !----------------------------------------------------
+
+    e%N_quad = 6
+
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%D_phi_q(e%N_dim, e%N_points, e%N_quad) )
+    
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 3) )
+
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+    
+    !-------------------
+    ! Quadrature formula
+    !--------------------------------------
+    alpha_1 = 0.0597158717d0
+    beta_1  = 0.4701420641d0
+    alpha_2 = 0.7974269853d0
+    beta_2  = 0.1012865073d0
+
+    e%x_q(1,:) = (/ alpha_1, beta_1,  beta_1  /)
+    e%x_q(2,:) = (/ beta_1,  alpha_1, beta_1  /)
+    e%x_q(3,:) = (/ beta_1,  beta_1,  alpha_1 /)
+    e%x_q(4,:) = (/ alpha_2, beta_2,  beta_2  /)
+    e%x_q(5,:) = (/ beta_2,  alpha_2, beta_2  /)
+    e%x_q(6,:) = (/ beta_2,  beta_2,  alpha_2 /)
+    
+    e%w_q(1:3) = 0.109951743655322d0
+    e%w_q(4:6) = 0.223381589678011d0
+
+    e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|
+    !--------------------------------------
+
+    e%xx_q = 0.d0
+    
+  END SUBROUTINE init_quadrature_TRI_P2
+  !====================================
 
 END MODULE Trianlge_Class

@@ -64,7 +64,13 @@ CONTAINS
     ! Limiting
     Phi_i = limitation(Phi_i)
 
-stab_i = CIP_stabilization(ele, u) 
+    ! Stabilization
+    !--------------
+    Stab_i = GLS_stabilization(ele, u)
+
+    !stab_i = CIP_stabilization(ele, u)
+
+    Phi_i = Phi_i + Stab_i
     
   END SUBROUTINE LLxFS_scheme
   !==========================
@@ -109,6 +115,97 @@ stab_i = CIP_stabilization(ele, u)
   !======================
 
   !==============================================
+  FUNCTION GLS_stabilization(ele, u) RESULT(Stab)
+  !==============================================
+
+    IMPLICIT NONE
+
+    TYPE(element),              INTENT(IN)  :: ele
+    REAL(KIND=8), DIMENSION(:), INTENT(IN)  :: u
+
+    REAL(KIND=8), DIMENSION(SIZE(u)) :: Stab
+    !---------------------------------------------
+
+    REAL(KIND=8) :: x_i, y_i
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: a
+
+    REAL(KIND=8), DIMENSION(N_dim) :: D_u_q, a_q
+
+    REAL(KIND=8), DIMENSION(:),     POINTER :: w
+    REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_q
+    REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
+    REAL(KIND=8) :: tau, Stab_D_u, Stab_D_phi
+    
+    INTEGER :: iq, i, N_s, N_v 
+    !---------------------------------------------
+
+    Stab = 0.d0
+
+    N_s = ele%N_points
+    N_v = ele%N_verts
+
+    ALLOCATE( a(N_dim, N_s) )
+    
+          w => ele%w_q
+    D_phi_q => ele%D_phi_q
+      phi_q => ele%phi_q
+
+    DO i = 1, N_s
+       
+       x_i = ele%coords(1, i)
+       y_i = ele%coords(2, i)
+
+       a(:, i) = advection_speed(pb_type, u(i), x_i, y_i)
+
+    ENDDO
+
+    !------------------
+    ! Scaling parameter
+    !---------------------------------------------
+    tau = 0.d0
+    
+    DO i = 1, N_v
+
+       tau = tau + &
+             0.5d0 * ABS( DOT_PRODUCT(a(:, i), ele%rd_n(:, i)) ) / ele%volume
+
+    ENDDO
+
+    tau = 1.d0 / tau
+
+    !-------------------
+    ! Stabilization term
+    !--------------------------------------------------
+    DO iq = 1, ele%N_quad
+
+       D_u_q = 0.d0
+         a_q = 0.d0
+
+       DO i = 1, N_s
+          D_u_q = D_u_q +  D_phi_q(:, i, iq) * u(i)
+            a_q = a_q   +  phi_q(i, iq) * a(:, i)
+       ENDDO
+
+       Stab_D_u = DOT_PRODUCT(a_q, D_u_q)
+       Stab_D_u = Stab_D_u * tau
+
+       DO i = 1, N_s
+
+         Stab_D_phi = DOT_PRODUCT(a_q, D_phi_q(:, i, iq))
+
+         Stab(i) = Stab(i) + Stab_D_u * Stab_D_phi * w(iq)
+               
+      ENDDO
+
+   ENDDO
+
+   NULLIFY( w, D_phi_q )
+   DEALLOCATE( a )
+
+  END FUNCTION GLS_stabilization
+  !=============================
+  
+  !==============================================
   FUNCTION CIP_stabilization(ele, u) RESULT(Stab)
   !==============================================
 
@@ -148,7 +245,7 @@ stab_i = CIP_stabilization(ele, u)
        ! Split the boundary integral on the element
        ! as the sum of integral on each face
        DO if = 1, ele%N_faces
-
+write(*,*) 'FACE', if
           N_quad     => ele%faces(if)%f%N_quad          
           w          => ele%faces(if)%f%w_q
           h_f        => ele%faces(if)%f%area
@@ -172,7 +269,8 @@ stab_i = CIP_stabilization(ele, u)
                     
           ! Perform the integration on the single face
           DO iq = 1, N_quad
-
+write(*,*) 'iq', iq
+write(*,*) 'xx_q', ele%faces(if)%f%xx_q(:,iq)
              n_2 = -n_1(:, iq)             
 
              ! Jump of the gradient of the i-th shape function
@@ -186,15 +284,18 @@ stab_i = CIP_stabilization(ele, u)
                                DOT_PRODUCT(p_Du_2_q(:, iq), n_2)
 
              Stab(i) = Stab(i) + &
-                       w(iq) * Jump_grad_phi(iq) * Jump_grad_u(iq) 
+                       w(iq) * Jump_grad_phi(iq) * Jump_grad_u(iq)
 
+do k = 1, ele%N_points
+write(*,*) 'D', p_Dphi_1_q(:, k, iq)
+enddo
           ENDDO
 
           NULLIFY( N_quad, w, n_1, p_Dphi_1_q, p_Dphi_2_q, loc_con )
           DEALLOCATE( Jump_grad_phi, Jump_grad_u, p_Dphi_l_2_q )
-
+write(*,*) '-------------'
        ENDDO
-
+write(*,*) 
     !ENDDO
 
     DEALLOCATE( n_2, p_Du_1_q, p_Du_2_q )    

@@ -47,6 +47,33 @@ MODULE Element_Class
      !-------------------------------------------------
      REAL(KIND=8), DIMENSION(:,:), POINTER :: rd_n
 
+     !------------
+     ! Quadrature
+     !------------------------------------------------------------
+     ! # quadrature points
+     INTEGER :: N_quad
+     !------------------------------------------------------------
+     ! Quadrature weighs (multiplied by the jacobian)
+     ! w_q(iq), iq = 1, N_quad
+     !------------------------------------------------------------
+     REAL(KIND=8), DIMENSION(:),     POINTER :: w_q
+     ! Reference Coordinates of the quadrature points
+     ! xx_q(ik, iq), , ik = 1, N_dim_ele, iq = 1, N_quad
+     !------------------------------------------------------------
+     REAL(kind=8), DIMENSION(:,:),   POINTER :: x_q    
+     ! Physical coordinates of the quadrature points
+     ! xx_q(id, iq), , id = 1, N_dim, iq = 1, N_quad
+     REAL(kind=8), DIMENSION(:,:),   POINTER :: xx_q
+     !------------------------------------------------------------
+     ! Value of basis functions at the quadrature point
+     ! phi_q(k, iq), k = 1, N_points,  iq = 1, N_quad
+     REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
+     !------------------------------------------------------------
+     ! Gradient of basis functions at the quadrature point
+     ! D_phi_q(id, k, iq), 
+     ! id =1, N_dim, k = 1, N_points,  iq = 1, N_quad
+     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_q
+
      !---------------
      !Faces structure
      !---------------------------------------------------

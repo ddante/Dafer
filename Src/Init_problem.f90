@@ -47,8 +47,6 @@ CONTAINS
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE, INTENT(INOUT) :: rhs
       !-------------------------------------------------------------
       
-integer :: jt, i
-
       INTEGER :: ierror, UNIT
       !-------------------------------------------------------------
 
@@ -58,17 +56,11 @@ integer :: jt, i
       ! Shock detector
       ALLOCATE( theta(N_dofs), theta_t(N_dofs) )
       
-      uu  = 0.d0;  rhs = 0.d0
+      uu = 0.d0;  rhs = 0.d0
 
-      theta = 1.d0;  theta_t = 10.d0
+      theta = 1.d0;  theta_t = 10.d0 !?
 
       with_source = detect_source(pb_type)
-
-DO jt = 1, N_elements
-DO i = 1, SIZE(elements(jt)%p%NU)
-uu(elements(jt)%p%NU(i)) = exact_solution(pb_type, elements(jt)%p%Coords(:, i), visc)
-ENDDO
-ENDDO
      
       CALL strong_bc(pb_type, visc, uu, rhs)
 

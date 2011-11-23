@@ -407,11 +407,11 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed quadrangle allocation'
        ENDIF
 
-       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(if) )
+       CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
 
        CALL e%gradient_trace(if, p_D_phi)
        
-       CALL seg%init_quadrature(p_D_phi)
+       CALL seg%face_quadrature(p_D_phi)
           
        e%faces(if)%f => seg
           
@@ -612,6 +612,8 @@ CONTAINS
     INTEGER,      DIMENSION(:),   ALLOCATABLE :: VV
     REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: RR
 
+    REAL(KIND=8), DIMENSION(:,:,:), ALLOCATABLE :: p_D_phi
+    
     INTEGER :: id, if, i, j, k, istat
     !-------------------------------------------------
 
@@ -642,9 +644,12 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed quadrangle allocation'
        ENDIF
 
-       CALL seg%initialisize( loc, VV, RR, NU_seg(if), n_ele(if) )
-!       CALL seg%init_quadrature()
+       CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
 
+       CALL e%gradient_trace(if, p_D_phi)
+       
+       CALL seg%face_quadrature(p_D_phi)
+          
        e%faces(if)%f => seg
           
     ENDDO

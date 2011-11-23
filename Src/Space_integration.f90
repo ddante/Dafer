@@ -52,7 +52,7 @@ CONTAINS
     Dt_v = 0.d0
 
     DO je = 1, N_elements
-write(*,*) 'ELE', je, '+++'
+!write(*,*) 'ELE', je, '+++'
        loc_ele = elements(je)%p
 
        Ns = loc_ele%N_points

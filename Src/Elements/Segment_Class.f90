@@ -12,30 +12,28 @@ MODULE Segment_Class
 
    CONTAINS
 
-     PROCEDURE, PUBLIC :: initialisize    => initialize_sub
-     PROCEDURE, PUBLIC :: basis_function  => basis_function_fun
-     PROCEDURE, PUBLIC :: gradient        => gradient_fun
-     PROCEDURE, PUBLIC :: normal          => normal_fun
-     PROCEDURE, PUBLIC :: init_quadrature => init_quadrature_sub
+     PROCEDURE, PUBLIC :: initialize      => initialize_sub
+     PROCEDURE, PUBLIC :: face_quadrature => face_quadrature_sub
+     
 
   END TYPE segment
   !=========================================
 
   PRIVATE :: initialize_sub
 
-  PRIVATE :: basis_function_fun
+  PRIVATE :: face_quadrature_sub
+  PRIVATE :: init_quadrature_SEG_P1
+  PRIVATE :: init_quadrature_SEG_P2
+
+  PRIVATE :: normal
+  
+  PRIVATE :: basis_function
   PRIVATE :: basis_function_SEG_P1
   PRIVATE :: basis_function_SEG_P2
 
-  PRIVATE :: gradient_fun
-  PRIVATE :: gradient_SEG_P1
-  PRIVATE :: gradient_SEG_P2
-
-  PRIVATE :: normal_fun
-    
-  PRIVATE :: init_quadrature_sub
-  PRIVATE :: init_quadrature_SEG_P1
-  PRIVATE :: init_quadrature_SEG_P2
+  PRIVATE :: gradient_ref
+  PRIVATE :: gradient_ref_SEG_P1
+  PRIVATE :: gradient_ref_SEG_P2
 
 CONTAINS
 
@@ -84,13 +82,9 @@ CONTAINS
      ALLOCATE( e%NU(SIZE(Nodes)) )
      ALLOCATE( e%l_NU(SIZE(loc)) )
           
-!     DO id = 1, SIZE(Coords,1)
-!        e%Coords(id, :) = Coords(id, :)
-!     ENDDO
-
-e%Coords(:, 1) = (/-1.d0, 1.d0/)
-e%Coords(:, 2) = (/ 1.d0, 1.d0/)
-e%Coords(:, 3) = (/ 0.d0, 0.d0/)
+     DO id = 1, SIZE(Coords,1)
+        e%Coords(id, :) = Coords(id, :)
+     ENDDO
 
      e%NU = Nodes
 
@@ -103,9 +97,96 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
   END SUBROUTINE initialize_sub
   !============================
 
-  !==================================================
-  FUNCTION basis_function_fun(e, i, xi) RESULT(psi_i)
-  !==================================================
+  !=========================================
+  SUBROUTINE face_quadrature_sub(e, p_D_phi)
+  !=========================================
+  !
+  ! Store the following  quantities at the quadrature points
+  !    - value of the basis function
+  !    - normal versor
+  !    - weight of the quadrature formula (multipplied by 
+  !      the jacobian of the transformation)
+  !    - value of the trace of the gradient of basis functions
+  !    - physical coordiantes of the quadrature point
+  !
+  ! Compute the lenght of the segment
+  !
+    IMPLICIT NONE
+
+    CLASS(segment)                             :: e
+    REAL(KIND=8), DIMENSION(:,:,:), INTENT(IN) :: p_D_phi
+    !----------------------------------------------------
+
+    REAL(KIND=8) :: Jac    
+    INTEGER :: j, k, l
+    !----------------------------------------------------
+
+    SELECT CASE(e%Type)
+
+    CASE(SEG_P1)
+
+       CALL init_quadrature_SEG_P1(e, p_D_phi)
+       
+    CASE(SEG_P2)
+
+       CALL init_quadrature_SEG_P2(e, p_D_phi)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Segment type for quadrature'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+    !-------------------------------------
+    ! Attach data to the quadrature points
+    !---------------------------------------------------
+    DO j = 1, e%N_quad
+
+       DO k = 1, e%N_points
+
+          e%phi_q(k, j) = basis_function( e, k, e%x_q(j, 1) )
+
+          e%xx_q(:, j) = e%xx_q(:, j) + &
+                         basis_function( e, k, e%x_q(j, 1) ) * e%Coords(:, k)
+
+       ENDDO
+
+       e%n_q(:, j) = normal(e, e%x_q(j, 1) )
+
+       Jac = SQRT( SUM(e%n_q(:, j)**2) )
+
+       e%n_q(:, j) = e%n_q(:, j)/Jac
+
+       e%w_q(j) = e%w_q(j) * Jac
+
+
+       DO k = 1, SIZE(p_D_phi,3)
+
+          DO l = 1, e%N_points
+             
+             e%p_Dphi_1_q(:, k, j) = e%p_Dphi_1_q(:, k, j) + &
+                                     p_D_phi(:, l, k)*e%phi_q(l, j)
+ 
+          ENDDO          
+          
+       ENDDO
+
+    ENDDO
+    
+  END SUBROUTINE face_quadrature_sub
+  !=================================
+
+
+!*******************************************************************************
+!*******************************************************************************
+!                         COMPLEMENTARY FUNCTIONS                              !
+!*******************************************************************************
+!*******************************************************************************
+
+  !==============================================
+  FUNCTION basis_function(e, i, xi) RESULT(psi_i)
+  !==============================================
 
     IMPLICIT NONE
 
@@ -133,11 +214,11 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
     END SELECT
 
-  END FUNCTION basis_function_fun
-  !==============================
+  END FUNCTION basis_function
+  !==========================
 
   !==============================================
-  FUNCTION gradient_fun(e, i, xi) RESULT(D_psi_i)
+  FUNCTION gradient_ref(e, i, xi) RESULT(D_psi_i)
   !==============================================
 
     IMPLICIT NONE
@@ -153,11 +234,11 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
        
     CASE(SEG_P1)
 
-       D_psi_i = gradient_SEG_P1(e, i, xi)
+       D_psi_i = gradient_ref_SEG_P1(e, i, xi)
        
     CASE(SEG_P2)
 
-       D_psi_i = gradient_SEG_P2(e, i, xi)
+       D_psi_i = gradient_ref_SEG_P2(e, i, xi)
        
     CASE DEFAULT
 
@@ -166,12 +247,12 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
     END SELECT
 
-  END FUNCTION gradient_fun
+  END FUNCTION gradient_ref
   !========================
 
-  !=====================================
-  FUNCTION normal_fun(e, xi) RESULT(n_i)
-  !=====================================
+  !=================================
+  FUNCTION normal(e, xi) RESULT(n_i)
+  !=================================
   !
   ! Compute the normal versor to the face 
   ! on the node with coordiantes xi
@@ -193,7 +274,7 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
     ALLOCATE( d(e%N_dim, e%N_points) )
 
     DO i = 1, e%N_points
-       d(:, i) = e%gradient(i, xi)
+       d(:, i) = gradient_ref(e, i, xi)
     ENDDO    
 
     ALLOCATE( Jb(e%N_dim-1, e%N_dim) )
@@ -212,53 +293,8 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
     DEALLOCATE( d, Jb )
 
-  END FUNCTION normal_fun
-  !======================
-
-  !=========================================
-  SUBROUTINE init_quadrature_sub(e, p_D_phi)
-  !=========================================
-  !
-  ! Store the following  quantities at the quadrature points
-  !    - value of the basis function
-  !    - normal versor
-  !    - weight of the quadrature formula (multipplied by 
-  !      the jacobian of the transformation)
-  !    - value of the gradient of the basis function 
-  !    - physical coordiantes of the quadrature point
-  !
-  ! Compute the lenght of the segment
-  !
-    IMPLICIT NONE
-
-    CLASS(segment)                             :: e
-    REAL(KIND=8), DIMENSION(:,:,:), INTENT(IN) :: p_D_phi
-    !----------------------------------------------------
-
-    SELECT CASE(e%Type)
-
-    CASE(SEG_P1)
-
-       CALL init_quadrature_SEG_P1(e, p_D_phi)
-       
-    CASE(SEG_P2)
-
-       CALL init_quadrature_SEG_P2(e, p_D_phi)
-       
-    CASE DEFAULT
-
-       WRITE(*,*) 'Unknown Segment type for quadrature'
-       WRITE(*,*) 'STOP'
-
-    END SELECT
-
-    ! Area of the element
-    ! warning: straight segment only!!!
-    e%area = SUM( e%w_q)
-
-  END SUBROUTINE init_quadrature_sub
-  !=================================
-
+  END FUNCTION normal
+  !==================
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -298,9 +334,9 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
   END FUNCTION basis_function_SEG_P1
   !=================================
 
-  !=================================================
-  FUNCTION gradient_SEG_P1(e, i, xi) RESULT(D_psi_i)
-  !=================================================
+  !=====================================================
+  FUNCTION gradient_ref_SEG_P1(e, i, xi) RESULT(D_psi_i)
+  !=====================================================
 
     IMPLICIT NONE
 
@@ -328,8 +364,8 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
     END SELECT    
 
-  END FUNCTION gradient_SEG_P1
-  !===========================
+  END FUNCTION gradient_ref_SEG_P1
+  !===============================
   
   !============================================
   SUBROUTINE init_quadrature_SEG_P1(e, p_D_phi)
@@ -351,8 +387,8 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
     ALLOCATE(   e%n_q(e%N_dim,    e%N_quad) )
     ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
 
-    ALLOCATE( e%w_q(e%N_quad) )
-    ALLOCATE(   x_q(e%N_quad) )
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 1) )
 
     ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
     ALLOCATE( e%p_Du_1_q(e%N_dim, e%N_quad) )
@@ -362,8 +398,8 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
     !-------------------
     ! Quadrature formula
     !-----------------------------
-    x_q(1) = 0.d0
-    x_q(2) = 1.d0
+    e%x_q(1, 1) = 0.d0
+    e%x_q(2, 1) = 1.d0
 
     e%w_q(1) = 0.5d0
     e%w_q(2) = 0.5d0
@@ -373,41 +409,6 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
     e%p_Dphi_2_q = 0.d0
 
     e%xx_q = 0.d0
-    
-    DO j = 1, e%N_quad
-
-       DO k = 1, e%N_points
-
-          e%phi_q(k, j) = e%basis_function( k, x_q(j) )
-
-          e%xx_q(:, j) = e%xx_q(:, j) + &               
-                         e%basis_function( k, x_q(j) ) * e%Coords(:, k)
-
-       ENDDO
-
-
-       e%n_q(:, j) = e%normal( x_q(j) )
-
-       Jac = SQRT( SUM(e%n_q(:, j)**2) )
-
-       e%n_q(:, j) = e%n_q(:, j)/Jac
-
-       e%w_q(j) = e%w_q(j) * Jac
-
-
-       DO k = 1, SIZE(p_D_phi,3)
-
-          DO l = 1, e%N_points
-             
-             e%p_Dphi_1_q(:, k, j) = e%p_Dphi_1_q(:, k, j) + &
-                                     p_D_phi(:, l, k)*e%phi_q(l, j)
- 
-          ENDDO          
-          
-       ENDDO
-       
-    
-    ENDDO    
     
   END SUBROUTINE init_quadrature_SEG_P1
   !====================================
@@ -454,9 +455,9 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
   END FUNCTION basis_function_SEG_P2
   !=================================
 
-  !=================================================
-  FUNCTION gradient_SEG_P2(e, i, xi) RESULT(D_psi_i)
-  !=================================================
+  !=====================================================
+  FUNCTION gradient_ref_SEG_P2(e, i, xi) RESULT(D_psi_i)
+  !=====================================================
 
     IMPLICIT NONE
 
@@ -488,8 +489,8 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
     END SELECT    
 
-  END FUNCTION gradient_SEG_P2
-  !===========================  
+  END FUNCTION gradient_ref_SEG_P2
+  !================================  
 
   !============================================
   SUBROUTINE init_quadrature_SEG_P2(e, p_D_phi)
@@ -511,8 +512,8 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
     ALLOCATE(   e%n_q(e%N_dim,    e%N_quad) )
     ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
 
-    ALLOCATE( e%w_q(e%N_quad) )
-    ALLOCATE(   x_q(e%N_quad) )
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 1) )
     
     ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
     ALLOCATE( e%p_Du_1_q(e%N_dim, e%N_quad) )
@@ -521,59 +522,20 @@ e%Coords(:, 3) = (/ 0.d0, 0.d0/)
 
     !-------------------
     ! Quadrature formula
-    !-----------------------------
-    x_q(1) = 0.5d0 * (1.d0 - sqrt(3.d0/5.d0) )
-    x_q(2) = 0.5d0 * (1.d0 + sqrt(3.d0/5.d0) )
-    x_q(3) = 0.5d0
-!!$    x_q(1) = 0.d0 
-!!$    x_q(2) = 1.d0
-!!$    x_q(3) = 0.5d0
+    !----------------------------------------------
+    e%x_q(1, 1) = 0.5d0 * (1.d0 - sqrt(3.d0/5.d0) )
+    e%x_q(2, 1) = 0.5d0 * (1.d0 + sqrt(3.d0/5.d0) )
+    e%x_q(3, 1) = 0.5d0
 
     e%w_q(1) = 5.d0/18.d0
     e%w_q(2) = 5.d0/18.d0
     e%w_q(3) = 8.d0/18.d0
-!!$    e%w_q(1) = 1.d0/6.d0
-!!$    e%w_q(2) = 1.d0/6.d0
-!!$    e%w_q(3) = 4.d0/6.d0
-    !-----------------------------
+    !-----------------------------------------------
 
     e%p_Dphi_1_q = 0.d0
     e%p_Dphi_2_q = 0.d0
 
     e%xx_q = 0.d0
-
-    DO j = 1, e%N_quad
-
-       DO k = 1, e%N_points
-
-          e%phi_q(k, j) = e%basis_function( k, x_q(j) )
-
-          e%xx_q(:, j) = e%xx_q(:, j) + &
-                         e%basis_function( k, x_q(j) ) * e%Coords(:, k)
-
-       ENDDO
-
-       e%n_q(:, j) = e%normal( x_q(j) )
-
-       Jac = SQRT( SUM(e%n_q(:, j)**2) )
-
-       e%n_q(:, j) = e%n_q(:, j)/Jac
-
-       e%w_q(j) = e%w_q(j) * Jac
-
-
-       DO k = 1, SIZE(p_D_phi,3)
-
-          DO l = 1, e%N_points
-             
-             e%p_Dphi_1_q(:, k, j) = e%p_Dphi_1_q(:, k, j) + &
-                                     p_D_phi(:, l, k)*e%phi_q(l, j)
- 
-          ENDDO          
-          
-       ENDDO
-
-    ENDDO
     
   END SUBROUTINE init_quadrature_SEG_P2
   !====================================

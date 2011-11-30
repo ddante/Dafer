@@ -13,10 +13,11 @@ MODULE models
                          LIN_VISC_ADVEC     = 3, &
                          SMITH_HUTTON       = 4, &
                          PERAIRE_ADVEC_DIFF = 5, &
-                         ADVECTION_SOURCE   = 6
+                         ADVECTION_SOURCE   = 6, &
+                         MANUFACTED_SOURCE  = 7
    !===============================================
    
-   REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)                         
+   REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
    REAL(KIND=8), PARAMETER :: theta = 100.d0
    !===============================================
 
@@ -79,6 +80,11 @@ MODULE models
 
             a(1) = y
             a(2) = 1.d0 - x
+            
+         CASE(MANUFACTED_SOURCE)
+
+            a(1) = 0.d0
+            a(2) = 1.d0
             
          CASE DEFAULT
          
@@ -144,7 +150,12 @@ MODULE models
 
             flux(1) = y*uu
             flux(2) = (1.d0 - x)*uu
-      
+
+         CASE(MANUFACTED_SOURCE)            
+
+            flux(1) = 0.d0
+            flux(2) = uu
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -184,14 +195,20 @@ MODULE models
             S = 0.d0
          ENDIF
          
+      CASE(MANUFACTED_SOURCE)
+         
+         s = DSIN(PI*x)*DCOS(PI*x)*DCOS(PI*y)*DCOS(PI*y)*PI - &
+             DSIN(PI*x)*DCOS(PI*x)*DSIN(PI*y)*DSIN(PI*y)*PI
          
       CASE DEFAULT
 
-         WRITE(*,*) 'Problem of unknow type.'         
-         WRITE(*,*) 'STOP!'
-         
-         STOP
-         
+!!$         WRITE(*,*) 'Problem of unknow type.'         
+!!$         WRITE(*,*) 'STOP!'
+!!$         
+!!$         STOP
+
+         RETURN
+
       END SELECT
       
    END FUNCTION source_term
@@ -208,9 +225,18 @@ MODULE models
      LOGICAL :: logic
      !------------------------------
 
-     logic = .FALSE.
+     SELECT CASE(type_pb)
 
-     IF (type_pb == ADVECTION_SOURCE) logic = .TRUE.
+        CASE( ADVECTION_SOURCE, &
+              MANUFACTED_SOURCE )
+
+           logic = .TRUE.
+
+        CASE DEFAULT
+
+           logic = .FALSE.
+
+        END SELECT        
      
    END FUNCTION detect_source
    !=========================
@@ -292,6 +318,10 @@ MODULE models
          CASE(ADVECTION_SOURCE)
 
             CALL bc_advection_source()
+
+         CASE(MANUFACTED_SOURCE)
+
+            CALL bc_manufacted_source()
                         
          CASE DEFAULT
          
@@ -598,7 +628,48 @@ CONTAINS
       
       END SUBROUTINE bc_advection_source
       !.................................
-         
+
+      !................................
+      SUBROUTINE bc_manufacted_source()
+      !
+      ! Square [0,1]x[0,1]
+      !
+      IMPLICIT NONE
+
+         DO k = 1, Nv
+            IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                 ABS(coord(2, k)) >= 0.d0) THEN
+               u_l(k) = 1.d0
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0) THEN
+               u_l(k) = 1.d0
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = 1.d0
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO        
+      
+      END SUBROUTINE bc_manufacted_source
+      !..................................
+
    END SUBROUTINE strong_bc
    !=======================
    
@@ -666,10 +737,15 @@ CONTAINS
                        
          phi = -(1.d0 - x**2)*(1 - y**2)         
          uu_ex = 1.d0 + TANH(theta*(1.d0 - 2.d0*SQRT(1.d0 + phi)))
-                        
-      CASE DEFAULT
+
+      CASE(MANUFACTED_SOURCE)
+
+         uu_ex = 1.d0 + DSIN(PI*x)*DCOS(PI*x)*DSIN(PI*y)*DCOS(PI*y)
          
-         uu_ex = 0.0
+      CASE DEFAULT
+
+         stop
+         !uu_ex = 0.0
       
       END SELECT
    

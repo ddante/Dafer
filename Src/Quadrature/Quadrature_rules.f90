@@ -5,7 +5,7 @@ MODULE Quadrature_rules
   IMPLICIT NONE
   PRIVATE
 
-  PUBLIC :: oInt_n
+  PUBLIC :: oInt_n, Int_d
 
 CONTAINS
 
@@ -70,5 +70,49 @@ CONTAINS
 
   END FUNCTION oInt_n
   !==================  
+
+  !===================================
+  FUNCTION Int_d(ele, ff) RESULT(i_ff)
+  !===================================
+  !
+  ! \int_{E} {ff}
+  !
+    IMPLICIT NONE
+
+    TYPE(element),              INTENT(IN) :: ele
+    REAL(KIND=8), DIMENSION(:), INTENT(IN) :: ff
+
+    REAL(KIND=8) :: i_ff
+    !----------------------------------------------
+
+    INTEGER :: N_quad,  N_points
+   
+    REAL(KIND=8), DIMENSION(:,:), POINTER :: p
+    REAL(KIND=8), DIMENSION(:),   POINTER :: w
+        
+    REAL(KIND=8) :: ff_q
+
+    INTEGER :: iq
+    !----------------------------------------------
+
+    i_ff = 0.d0
+
+    N_quad   =  ele%N_quad
+    N_points =  ele%N_points
+    p        => ele%phi_q
+    w        => ele%w_q
+
+    DO iq = 1, N_quad
+
+       ff_q = SUM( ff * p(:, iq) )
+
+       i_ff = i_ff + w(iq) * ff_q
+
+    ENDDO
+       
+    NULLIFY( p, w )
+       
+  END FUNCTION Int_d
+  !=================
 
 END MODULE Quadrature_rules

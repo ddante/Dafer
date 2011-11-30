@@ -31,8 +31,7 @@ CONTAINS
     INTEGER :: UNIT, ierror
     !-----------------------------------------------
 
-    CALL compute_rhs(uu, rhs, Dt_V)!; stop
-
+    CALL compute_rhs(uu, rhs, Dt_V)
     
     IF ( time_int == 0 ) THEN
 
@@ -46,19 +45,16 @@ CONTAINS
        !---------------
        ! Implicit Euler
        !---------------------------------
-!!$       Delta_u = MF_GMRES(uu, rhs, Dt_V)
-!!$
-!!$       uu = uu + Delta_u
+       STOP
        
     ENDIF
-    
+   
     !-----------------------
     ! Normalized L2 Residual
     !-----------------------------------------------
     res = SQRT(SUM(rhs*rhs)) / REAL(N_dofs)
 
     IF(ite == 1) res_0 = res
-
     res = res/res_0
 
     !------------------------
@@ -68,7 +64,7 @@ CONTAINS
 
     OPEN(UNIT, FILE = 'convergence.'//TRIM(ADJUSTL(pb_name)), &
          ACTION = 'WRITE', POSITION = 'APPEND', IOSTAT = ierror)
-           
+            
     IF(ierror /= 0) THEN
        
        WRITE(*,*) 'ERROR: Impossible to open the file converegence'
@@ -80,7 +76,7 @@ CONTAINS
     WRITE(UNIT, 500) ite, res
     
     CLOSE(UNIT)
-      
+     
     !--------------------
     ! Data on the screan
     !------------------------------------------------
@@ -89,7 +85,7 @@ CONTAINS
     WRITE(*, *)
 
 500 FORMAT(I5, 1x, e24.16)      
-600 FORMAT('Iteration # ', I5, '    uu min = ', F10.8, ', uu max =', F10.8)
+600 FORMAT('Iteration # ', I5, '    uu min = ', F10.6, ', uu max =', F10.6)
 601 FORMAT('     Rsidual = ', e16.8)
 
   END SUBROUTINE time_advance

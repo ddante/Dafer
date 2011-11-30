@@ -1,7 +1,7 @@
 MODULE init_problem
 
   USE Geometry,       ONLY: N_dofs, elements,  N_elements
-  USE Models,         ONLY: strong_bc, detect_source,  exact_solution
+  USE Models,         ONLY: strong_bc, detect_source
 
   IMPLICIT NONE
 
@@ -20,17 +20,13 @@ MODULE init_problem
   LOGICAL           :: with_source
   !=======================================
 
-  REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: theta
-  REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: theta_t
-
   !=======================================
 
   PUBLIC :: read_param, initialization
   PUBLIC :: pb_name, order,              &
             scheme_type, time_int,       &
             pb_type, CFL, visc, ite_max, &
-            toll_res, with_source,       &
-            theta, theta_t
+            toll_res, with_source
   !=======================================
 
 CONTAINS
@@ -52,13 +48,8 @@ CONTAINS
 
       ! Solution and RHS
       ALLOCATE( uu(N_dofs), rhs(N_dofs) )
-
-      ! Shock detector
-      ALLOCATE( theta(N_dofs), theta_t(N_dofs) )
       
       uu = 0.d0;  rhs = 0.d0
-
-      theta = 1.d0;  theta_t = 10.d0 !?
 
       with_source = detect_source(pb_type)
      

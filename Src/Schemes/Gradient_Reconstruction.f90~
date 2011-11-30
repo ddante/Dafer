@@ -1,0 +1,56 @@
+MODULE Gradient_Reconstruction
+
+  USE Element_class  
+  USE geometry,       ONLY: N_dim, N_elements, elements
+
+  IMPLICIT NONE
+
+CONTAINS
+
+  !=================================
+  SUBROUTINE Face_Average_Gradient()
+  !=================================
+
+    IMPLICIT NONE
+
+    TYPE(element) :: ele    
+    
+    REAL(KIND=8), DIMENSION(N_dim) :: Mean_grad_u
+
+    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_1_q
+    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_2_q
+
+    INTEGER :: je, if, iq
+    !-------------------------------------------------
+
+    DO je = 1, N_elements
+
+       ele = elements(je)%p
+
+       DO if = 1, ele%N_faces
+
+          N_quad   => ele%faces(if)%f%N_quad
+          p_Du_1_q => ele%faces(if)%f%p_Du_1_q
+          p_Du_2_q => ele%faces(if)%f%p_Du_2_q
+          
+          DO iq = 1, N_quad
+
+             Mean_grad_u = 0.5d0 * &
+                          ( p_Du_1_q(:, iq) + p_Du_2_q(:, iq) )
+
+             !ele%faces(i_f)%f%G_u(:, iq) = Mean_grad_u
+
+          ENDDO
+          
+
+       ENDDO
+
+       NULLIFY( N_quad, p_Du_1_q, p_Du_2_q ) 
+
+    ENDDO
+    
+  END SUBROUTINE Face_Average_Gradient
+  !===================================  
+  
+
+END MODULE Gradient_Reconstruction

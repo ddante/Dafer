@@ -173,6 +173,10 @@ CONTAINS
        ENDDO
 
     ENDDO
+
+    ! Area of the element
+    ! warning: straight segment only!!!
+    e%area = SUM(e%w_q)
     
   END SUBROUTINE face_quadrature_sub
   !=================================
@@ -398,8 +402,8 @@ CONTAINS
     !-------------------
     ! Quadrature formula
     !-----------------------------
-    e%x_q(1, 1) = 0.d0
-    e%x_q(2, 1) = 1.d0
+    e%x_q(1, 1) = 0.5d0*( 1.d0 - SQRT(1.d0/3.d0) )
+    e%x_q(2, 1) = 0.5d0*( 1.d0 + SQRT(1.d0/3.d0) )
 
     e%w_q(1) = 0.5d0
     e%w_q(2) = 0.5d0

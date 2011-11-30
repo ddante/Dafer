@@ -1,9 +1,10 @@
 PROGRAM main
 
-  USE init_problem,      ONLY: initialization, read_param, order, &
+  USE init_problem,      ONLY: read_param, initialization, order, &
                                ite_max, toll_res
-  USE geometry,          ONLY: read_gmshMesh, init_elements, &
-                               elements, N_elements
+
+  USE geometry,          ONLY: read_gmshMesh, init_elements
+
   USE time_integration
 
   USE post_pro
@@ -71,6 +72,8 @@ PROGRAM main
  ! Post-processing
  !----------------------------------------------
  CALL plot_procedure(uu)
+
+ CALL compute_error(uu)
 
 END PROGRAM main
 

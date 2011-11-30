@@ -13,11 +13,8 @@ MODULE Trianlge_Class
 
    CONTAINS
 
-     PROCEDURE, PUBLIC :: initialize        => initialize_sub
-!!$  PROCEDURE, PUBLIC :: volume_quadrature => volume_quadrature_sub
-!!$  PROCEDURE, PUBLIC :: face_quadrature   => volume_quadrature_sub
+     PROCEDURE, PUBLIC :: initialize => initialize_sub
 
-     
   END TYPE triangle
   !=========================================
 
@@ -27,9 +24,7 @@ MODULE Trianlge_Class
   PRIVATE :: init_faces_TRI_P1
   PRIVATE :: init_faces_TRI_P2
 
-!!$  PRIVATE :: volume_quadrature_sub
-!!$  PRIVATE :: init_volume_quadrature_TRI_P1
-!!$  PRIVATE :: init_volume_quadrature_TRI_P2
+  PRIVATE :: volume_quadrature
 
   PRIVATE :: basis_function
   PRIVATE :: basis_function_TRI_P1
@@ -39,8 +34,12 @@ MODULE Trianlge_Class
   
   PRIVATE :: gradient_ref
   PRIVATE :: gradient_ref_TRI_P1
-  PRIVATE :: gradient_ref_TRI_P2 
+  PRIVATE :: gradient_ref_TRI_P2
 
+  PRIVATE :: DOFs_ref
+  PRIVATE :: DOFs_ref_TRI_P1
+  PRIVATE :: DOFs_ref_TRI_P2
+  
   PRIVATE :: gradient_trace
   PRIVATE :: face_trace
   PRIVATE :: face_trace_TRI_P1
@@ -112,8 +111,10 @@ CONTAINS
 
      IF( mode == "element") THEN
 
+        ! Itialize the faces of the element
         CALL init_faces(e, Nodes, Coords, NU_seg, n_ele)
 
+        ! Store the informations at the quadrature points
         CALL volume_quadrature(e)
         
         !--------------------------
@@ -124,6 +125,8 @@ CONTAINS
         DO i = 1, e%N_points
            e%rd_n(:, i) = rd_normal(e, i)
         ENDDO
+
+        CALL nodal_gradients(e)
 
      ENDIF
          
@@ -236,6 +239,44 @@ CONTAINS
 
   END SUBROUTINE volume_quadrature
   !===============================
+
+  !============================
+  SUBROUTINE nodal_gradients(e)
+  !============================
+  !
+  ! Compute the gradient of the basis functions
+  ! at the DOFs of the element
+  !
+    IMPLICIT NONE
+
+    CLASS(triangle) :: e    
+    !-----------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: x_dof
+
+    INTEGER :: i, k
+    !-----------------------------------------------
+
+    ALLOCATE( x_dof(e%N_points, 3) )
+    
+    x_dof = DOFs_ref(e)
+    
+    ALLOCATE( e%D_phi_k(e%N_dim, e%N_points, e%N_points) )
+
+    DO i = 1, e%N_points
+
+       DO k = 1, e%N_points
+
+          e%D_phi_k(:, i, k) = gradient( e, i, x_dof(k, :) )
+
+       ENDDO
+
+    ENDDO
+    
+    DEALLOCATE(x_dof)
+
+  END SUBROUTINE nodal_gradients
+  !=============================
 
 !*******************************************************************************
 !*******************************************************************************
@@ -456,6 +497,44 @@ CONTAINS
   END FUNCTION face_trace
   !======================
 
+  !=================================
+  FUNCTION DOFs_ref(e) RESULT(x_dof)
+  !=================================
+  !
+  ! Compute the coordinates of the DOFs
+  ! on the reference element
+  !
+    IMPLICIT NONE
+
+    CLASS(triangle) :: e
+    
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: x_dof
+    !-------------------------------------------------
+     
+    SELECT CASE(e%Type)
+       
+    CASE(TRI_P1)
+
+       ALLOCATE( x_dof(3, 3) )
+
+       x_dof = DOFs_ref_TRI_P1(e)
+       
+    CASE(TRI_P2)
+
+       ALLOCATE( x_dof(6, 3) )
+
+       x_dof = DOFs_ref_TRI_P2(e)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Tiangle type for DOFs'
+       WRITE(*,*) 'STOP'
+
+    END SELECT 
+
+  END FUNCTION DOFs_ref
+  !====================
+
   !==========================================
   FUNCTION Compute_Jacobian(e, xi) RESULT(JJ)
   !==========================================
@@ -635,6 +714,24 @@ CONTAINS
   END FUNCTION gradient_ref_TRI_P1
   !===============================
 
+  !========================================
+  FUNCTION DOFs_ref_TRI_P1(e) RESULT(x_dof)
+  !========================================
+
+    IMPLICIT NONE
+
+    CLASS(triangle):: e
+
+    REAL(KIND=8), DIMENSION(3,3) :: x_dof
+    !------------------------------------
+
+    x_dof(1, :) = (/ 1.d0,  0.d0,  0.d0  /)
+    x_dof(2, :) = (/ 0.d0,  1.d0,  0.d0  /)
+    x_dof(3, :) = (/ 0.d0,  0.d0,  1.d0  /)
+
+  END FUNCTION DOFs_ref_TRI_P1
+  !===========================
+  
   !===========================================
   FUNCTION rd_normal_TRI_P1(e, k) RESULT(nn_k)
   !===========================================
@@ -707,9 +804,12 @@ CONTAINS
     IMPLICIT NONE
 
     CLASS(triangle) :: e
-    !-------------------
+    !----------------------------------------------
 
-    e%N_quad = 3
+    REAL(KIND=8) :: alpha_1, beta_1
+    !-----------------------------------------------
+
+    e%N_quad = 6
 
     ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
 
@@ -723,18 +823,24 @@ CONTAINS
     !-------------------
     ! Quadrature formula
     !--------------------------------------
-!    e%x_q(1, :) = (/ 0.5d0, 0.5d0, 0.d0  /)
-!    e%x_q(2, :) = (/ 0.0d0, 0.5d0, 0.5d0 /)
-!    e%x_q(3, :) = (/ 0.5d0, 0.0d0, 0.5d0 /)
-     e%x_q(1, :) = (/ 1.d0, 0.d0, 0.d0  /)
-     e%x_q(2, :) = (/ 0.d0, 1.d0, 0.d0 /)
-     e%x_q(3, :) = (/ 0.d0, 0.d0, 1.d0 /)
+    alpha_1 = 0.816847572980459d0
+    beta_1  = 0.091576213509771d0
 
-     e%w_q(:) = 1.0d0 / 3.d0
-
-     e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|  
-     !--------------------------------------
-     
+    e%x_q(1,:) = (/ alpha_1, beta_1 , beta_1  /)
+    e%x_q(2,:) = (/ beta_1 , alpha_1, beta_1  /)
+    e%x_q(3,:) = (/ beta_1 , beta_1 , alpha_1 /)
+    e%w_q(1:3) = 0.109951743655322d0
+    
+    alpha_1 = 0.108103018168070d0
+    beta_1  = 0.445948490915965d0
+    
+    e%x_q(4,:) = (/ alpha_1, beta_1 , beta_1  /)
+    e%x_q(5,:) = (/ beta_1 , alpha_1, beta_1  /)
+    e%x_q(6,:) = (/ beta_1 , beta_1 , alpha_1 /)    
+    e%w_q(4:6) = 0.223381589678011d0
+    !--------------------------------------
+    
+    e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|  
     
     e%xx_q = 0.d0
     
@@ -907,6 +1013,27 @@ CONTAINS
   END FUNCTION gradient_ref_TRI_P2
   !===============================
 
+  !========================================
+  FUNCTION DOFs_ref_TRI_P2(e) RESULT(x_dof)
+  !========================================
+
+    IMPLICIT NONE
+
+    CLASS(triangle):: e
+
+    REAL(KIND=8), DIMENSION(6,3) :: x_dof
+    !-------------------------------------
+
+    x_dof(1, :) = (/ 1.d0,  0.d0,  0.d0  /)
+    x_dof(2, :) = (/ 0.d0,  1.d0,  0.d0  /)
+    x_dof(3, :) = (/ 0.d0,  0.d0,  1.d0  /)
+    x_dof(4, :) = (/ 0.5d0, 0.5d0, 0.d0  /)
+    x_dof(5, :) = (/ 0.d0,  0.5d0, 0.5d0 /)
+    x_dof(6, :) = (/ 0.5d0, 0.d0,  0.5d0 /)
+
+  END FUNCTION DOFs_ref_TRI_P2
+  !===========================  
+
   !===========================================
   FUNCTION rd_normal_TRI_P2(e, k) RESULT(nn_k)
   !===========================================
@@ -1007,10 +1134,10 @@ CONTAINS
     CLASS(triangle) :: e
     !----------------------------------------------------
 
-    REAL(KIND=8) :: alpha_1, alpha_2, beta_1,beta_2 
+    REAL(KIND=8) :: alpha_1, beta_1, gamma_1
     !----------------------------------------------------
 
-    e%N_quad = 6
+    e%N_quad = 12
 
     ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
 
@@ -1024,24 +1151,36 @@ CONTAINS
     !-------------------
     ! Quadrature formula
     !--------------------------------------
-    alpha_1 = 0.0597158717d0
-    beta_1  = 0.4701420641d0
-    alpha_2 = 0.7974269853d0
-    beta_2  = 0.1012865073d0
+    alpha_1 = 0.873821971016996d0
+    beta_1  = 0.063089014491502d0
 
     e%x_q(1,:) = (/ alpha_1, beta_1,  beta_1  /)
     e%x_q(2,:) = (/ beta_1,  alpha_1, beta_1  /)
     e%x_q(3,:) = (/ beta_1,  beta_1,  alpha_1 /)
-    e%x_q(4,:) = (/ alpha_2, beta_2,  beta_2  /)
-    e%x_q(5,:) = (/ beta_2,  alpha_2, beta_2  /)
-    e%x_q(6,:) = (/ beta_2,  beta_2,  alpha_2 /)
+    e%w_q(1:3) = 0.050844906370207d0
     
-    e%w_q(1:3) = 0.109951743655322d0
-    e%w_q(4:6) = 0.223381589678011d0
+    alpha_1 = 0.501426509658179d0
+    beta_1  = 0.249286745170910d0
 
-    e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|
+    e%x_q(4,:) = (/ beta_1,  beta_1,  alpha_1 /)
+    e%x_q(5,:) = (/ beta_1,  alpha_1, beta_1  /)
+    e%x_q(6,:) = (/ alpha_1, beta_1,  beta_1  /)
+    e%w_q(4:6) = 0.116786275726379d0
+
+    alpha_1 = 0.636502499121399d0 
+    beta_1  = 0.310352451033785d0
+    gamma_1 = 0.053145049844816d0 
+
+    e%x_q(7,:)  = (/ alpha_1, beta_1,  gamma_1 /)
+    e%x_q(8,:)  = (/ alpha_1, gamma_1, beta_1  /)
+    e%x_q(9,:)  = (/ beta_1,  alpha_1, gamma_1 /)
+    e%x_q(10,:) = (/ gamma_1, alpha_1, beta_1  /)
+    e%x_q(11,:) = (/ beta_1,  gamma_1, alpha_1 /)
+    e%x_q(12,:) = (/ gamma_1, beta_1,  alpha_1 /)    
+    e%w_q(7:12) = 0.082851075618374d0
     !--------------------------------------
-
+    e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|
+    
     e%xx_q = 0.d0
     
   END SUBROUTINE init_quadrature_TRI_P2

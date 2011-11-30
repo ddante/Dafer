@@ -7,7 +7,8 @@ MODULE Post_pro
   USE geometry,      ONLY : N_dim, N_elements, N_dofs, elements
 
   USE models,        ONLY : exact_solution
-  !USE Quadrature
+
+  USE Quadrature_rules,  ONLY : Int_d
 
   IMPLICIT NONE
   PRIVATE
@@ -18,7 +19,7 @@ MODULE Post_pro
   END TYPE type_verts
   !==========================================
 
-  PUBLIC :: plot_procedure!, compute_error
+  PUBLIC :: plot_procedure, compute_error
   !==========================================
 
 CONTAINS
@@ -222,5 +223,87 @@ CONTAINS
       
     END SUBROUTINE plot_procedure
     !============================
+
+    !===========================
+    SUBROUTINE compute_error(uu)
+    !===========================
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), DIMENSION(:), INTENT(IN)  :: uu      
+      !---------------------------------------------
+
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: uu_ex
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: err_ele
+      
+      REAL(KIND=8) :: err_L2, err_Loo, int_uex
+
+      INTEGER :: je, i, ierror, UNIT
+      !---------------------------------------------
+
+      err_L2 = 0.d0; err_Loo = 0.d0; int_uex = 0.d0
+      
+      !---------------
+      ! Exact solution
+      !--------------------------------------------------
+      DO je = 1, N_elements
+
+         ALLOCATE(   uu_ex(elements(je)%p%N_points), &
+                   err_ele(elements(je)%p%N_points)  )
+     
+         DO i = 1, elements(je)%p%N_points
+
+            uu_ex(i) = exact_solution(pb_type, elements(je)%p%Coords(:, i), visc)
+
+         ENDDO
+
+         err_ele = uu(elements(je)%p%NU) - uu_ex
+         
+         !----------
+         ! L_2 error
+         !-------------------------------------
+         err_L2  = err_L2  + Int_d(elements(je)%p, err_ele**2)
+         int_uex = int_uex + Int_d(elements(je)%p, uu_ex**2)
+
+         !-----------
+         ! L_oo error
+         !-------------------------------------
+         err_Loo = MAX( err_Loo, &
+                        MAXVAL(ABS(uu(elements(je)%p%NU) - uu_ex)) )
+
+         DEALLOCATE( uu_ex, err_ele )
+
+      ENDDO
+
+      ! Normalize L2 error
+      err_L2 = SQRT(err_L2) / SQRT(int_uex)
+
+      WRITE(*,*) ' *** COMPUTE THE ERROR ***'
+            
+      WRITE(*,*) 'N. dof, err L2, err_Loo'
+      WRITE(*,22) N_dofs, err_L2, err_Loo
+      
+      UNIT = 9
+      
+      OPEN(UNIT, FILE = 'error.'//TRIM(ADJUSTL(pb_name)), &
+           ACTION= 'WRITE', IOSTAT = ierror)
+           
+      IF(ierror /= 0) THEN
+         WRITE(*,*) 'ERROR: Impossible to open the file error'
+         WRITE(*,*) 'STOP'
+      
+         STOP
+      ENDIF
+      
+      WRITE(UNIT, *) 'N. dof, err L2, err_Loo'
+      WRITE(UNIT,22)  N_dofs, err_L2, err_Loo
+
+      CLOSE(UNIT)
+      
+22 FORMAT(I6, 2(1x,e24.16))
+
+      
+    END SUBROUTINE compute_error
+    !===========================    
 
 END MODULE Post_pro

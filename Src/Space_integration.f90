@@ -5,17 +5,22 @@ MODULE space_integration
   USE geometry,       ONLY: N_dim, N_dofs, N_elements, elements
 
   USE init_problem,   ONLY: order, pb_type, visc, CFL, &
-                            theta, theta_t, with_source
+                            with_source
 
   USE models,         ONLY: advection_flux, strong_bc, &
                             source_term
   USE Num_scheme
+  USE Gradient_Reconstruction
 
-  USE Quadrature_rules, ONLY: oInt_n
+  USE Quadrature_rules, ONLY: oInt_n, Int_d
 
   IMPLICIT NONE
-  PRIVATE
-  
+
+  !================================================
+  REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: D_uu
+  !================================================
+
+  PRIVATE  
   PUBLIC :: compute_rhs
 
 CONTAINS
@@ -47,12 +52,18 @@ CONTAINS
     INTEGER :: Ns, je, i_f, k, iq, n_ele, istat
     !----------------------------------------------
 
-    rhs = 0.d0;  theta_t = 0.d0
+    rhs = 0.d0
 
     Dt_v = 0.d0
 
+    IF (.NOT. ALLOCATED(D_uu) ) THEN
+       ALLOCATE( D_uu(N_dim, SIZE(uu)) )
+    ENDIF
+    
+    D_uu = Compute_gradient(uu)
+
     DO je = 1, N_elements
-!write(*,*) 'ELE', je, '+++'
+
        loc_ele = elements(je)%p
 
        Ns = loc_ele%N_points
@@ -73,8 +84,8 @@ CONTAINS
        !------------------------------------------------------
        DO i_f = 1, loc_ele%N_faces
 
-          p_Dphi_1_q => elements(je)%p%faces(i_f)%f%p_Dphi_1_q
-          p_Dphi_2_q => elements(je)%p%faces(i_f)%f%p_Dphi_2_q
+          p_Dphi_1_q => loc_ele%faces(i_f)%f%p_Dphi_1_q
+          p_Dphi_2_q => loc_ele%faces(i_f)%f%p_Dphi_2_q
           
           n_ele = loc_ele%faces(i_f)%f%c_ele
 
@@ -98,38 +109,44 @@ CONTAINS
                    p_Du_2_q = p_Du_2_q + p_Dphi_2_q(:, k,iq)*u2(k)
                 ENDDO
 
-                elements(je)%p%faces(i_f)%f%p_Du_1_q(:,iq) = p_Du_1_q
-                elements(je)%p%faces(i_f)%f%p_Du_2_q(:,iq) = p_Du_2_q
+                loc_ele%faces(i_f)%f%p_Du_1_q(:,iq) = p_Du_1_q
+                loc_ele%faces(i_f)%f%p_Du_2_q(:,iq) = p_Du_2_q
 
              ENDDO
 
-             DEALLOCATE( u2 )             
+             DEALLOCATE( u2 )
 
-             NULLIFY( p_Dphi_1_q, p_Dphi_2_q )             
+             NULLIFY( p_Dphi_1_q, p_Dphi_2_q )
 
           ELSE
 
-             elements(je)%p%faces(i_f)%f%p_Du_1_q = 0.d0
-             elements(je)%p%faces(i_f)%f%p_Du_2_q = 0.d0
+             loc_ele%faces(i_f)%f%p_Du_1_q = 0.d0
+             loc_ele%faces(i_f)%f%p_Du_2_q = 0.d0
+
+!!$             DO iq = 1, loc_ele%faces(i_f)%f%N_quad                !* 
+!!$                p_Du_1_q = 0.d0                                    !*
+!!$                DO k = 1, loc_ele%N_points                         !*
+!!$                   p_Du_1_q = p_Du_1_q + p_Dphi_1_q(:, k,iq)*u1(k) !*
+!!$                ENDDO
+!!$             ENDDO
 
           ENDIF
-          
 
        ENDDO
        !------------------------------------------------------
 
-       !----------------------------
+       !---------------------------
        ! Distribute the fluctuation
        !------------------------------------------------------------
        CALL distribute_residual(loc_ele, Phi_tot, u1, Phi_i, inv_dt)
 
-       ! Gather the nadal residual       
+       ! Gather the nadal residual
        rhs(Nu) = rhs(Nu) + Phi_i
        
        Dt_V(Nu) = Dt_V(Nu) + inv_dt
        
        DEALLOCATE( Nu, u1, Phi_i )
-      
+
     ENDDO
 
     Dt_V = CFL/DT_V
@@ -159,7 +176,8 @@ CONTAINS
     REAL(KIND=8) :: Phi_advec, Phi_diff, Source
 
     REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: ff
-    
+    REAL(KIND=8), DIMENSION(:),   ALLOCATABLE :: SS
+
     INTEGER :: Ns, i, j
     !---------------------------------------------
 
@@ -169,7 +187,8 @@ CONTAINS
 
     Ns = ele%N_points
 
-    ALLOCATE( ff(N_dim, Ns) )
+    ALLOCATE( ff(N_dim, Ns), &
+              SS(Ns)         )
 
     DO i = 1, Ns
 
@@ -177,15 +196,20 @@ CONTAINS
        y = ele%Coords(2, i)
 
        ff(:, i) = advection_flux(pb_type, u(i), x, y)
+       SS(i)    = source_term(   pb_type, u(i), x, y)
 
     ENDDO
 
     Phi_advec = oInt_n(ele, ff)
 
-    DEALLOCATE( ff )
+    IF( with_source ) THEN
+       Source = Int_d(ele, SS)
+    ENDIF
+    
+    DEALLOCATE( ff, SS )
 
     Phi_tot = Phi_advec - Phi_diff - Source
-                      !^^^
+                      !^^^       !^^^
 
   END FUNCTION total_residual
   !==========================

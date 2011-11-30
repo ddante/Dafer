@@ -66,14 +66,19 @@ MODULE Element_Class
      REAL(kind=8), DIMENSION(:,:),   POINTER :: xx_q
      !------------------------------------------------------------
      ! Value of basis functions at the quadrature point
-     ! phi_q(k, iq), k = 1, N_points,  iq = 1, N_quad
+     ! phi_q(i, iq), i = 1, N_points,  iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
      !------------------------------------------------------------
      ! Gradient of basis functions at the quadrature point
-     ! D_phi_q(id, k, iq), 
-     ! id =1, N_dim, k = 1, N_points,  iq = 1, N_quad
+     ! D_phi_q(id, i, iq), 
+     ! id =1, N_dim, i = 1, N_points,  iq = 1, N_quad
      REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_q
 
+     ! Gradient of the basis functions at the DOFs
+     !  D_phi_k(id, i, k)
+     ! id =1, N_dim, i = 1, N_points,  k = 1, N_points
+     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_k
+     
      !---------------
      !Faces structure
      !---------------------------------------------------

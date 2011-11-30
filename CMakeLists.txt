@@ -24,6 +24,7 @@ SET(QUADRATURE_FILES
 SET(SCHEMES_FILES
   Src/Schemes/Num_Scheme.f90
   Src/Schemes/LLxFS_method.f90
+  Src/Schemes/Gradient_Reconstruction.f90
 )
 
 SET(MAIN_FILES 

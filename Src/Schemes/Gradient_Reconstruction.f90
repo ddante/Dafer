@@ -2,6 +2,7 @@ MODULE Gradient_Reconstruction
 
   USE Element_class  
   USE geometry,       ONLY: N_dim, N_elements, elements
+  USE Quadrature_rules
 
   IMPLICIT NONE
 
@@ -63,12 +64,12 @@ CONTAINS
 
     REAL(KIND=8), DIMENSION(N_dim) :: D_u
 
-    INTEGER :: k, i, je
+    INTEGER :: k, i, je, jf
     !------------------------------------------------
 
-    D_uu = 0.d0
-
     ALLOCATE( Den(SIZE(uu)) )
+
+    D_uu = 0.d0;  Den = 0.d0
     
     DO je = 1, N_elements
 
@@ -85,7 +86,7 @@ CONTAINS
           ENDDO
 
           D_uu(:, loc_ele%NU(k)) = D_uu(:, loc_ele%NU(k)) + &
-                                   D_u*loc_ele%volume
+                                   D_u * loc_ele%volume
 
        ENDDO
 

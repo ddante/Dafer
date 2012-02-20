@@ -5,7 +5,7 @@ MODULE Quadrature_rules
   IMPLICIT NONE
   PRIVATE
 
-  PUBLIC :: oInt_n, Int_d
+  PUBLIC :: oInt_n, Int_d, int_d_G
 
 CONTAINS
 
@@ -114,5 +114,45 @@ CONTAINS
        
   END FUNCTION Int_d
   !=================
+
+  !==================================
+  FUNCTION int_d_G(ele, k) RESULT(ig)
+  !==================================
+  !
+  ! int_{E} {Grad phi_k}
+  !
+    IMPLICIT NONE
+
+    TYPE(element), INTENT(IN) :: ele
+    INTEGER,       INTENT(IN) :: k
+
+    REAL, DIMENSION(ele%N_dim) :: ig
+    !---------------------------------
+
+    INTEGER :: N_quad
+
+    REAL(KIND=8), DIMENSION(:,:,:), POINTER :: d_phi
+    REAL(KIND=8), DIMENSION(:),     POINTER :: w
+
+    INTEGER :: iq
+    !-----------------------------------------
+
+    ig = 0.d0
+
+    N_quad =  ele%N_quad
+    w      => ele%w_q
+    d_phi  => ele%D_phi_q
+
+    DO iq = 1, N_quad
+
+       ig = ig + d_phi(:, k, iq)*w(iq)
+
+    ENDDO
+    
+    NULLIFY( w, d_phi )
+
+  END FUNCTION int_d_G
+  !===================  
+
 
 END MODULE Quadrature_rules

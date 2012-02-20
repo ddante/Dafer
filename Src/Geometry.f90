@@ -28,7 +28,6 @@ MODULE geometry
   INTEGER :: N_nodes, N_ele_mesh
 
   REAL(KINd=8), DIMENSION(:,:), ALLOCATABLE :: rr_nodes
-  
 
   INTEGER, PARAMETER :: N_dim = 2
 
@@ -42,7 +41,7 @@ MODULE geometry
   INTEGER, PARAMETER :: GMSH_POINT      = 15
   !==========================================================
 
-  PUBLIC :: read_gmshMesh, Init_Elements
+  PUBLIC :: read_gmshMesh, read_MeshFBx, Init_Elements
   PUBLIC :: N_dim, N_dofs, N_elements, elements
   !==========================================================
 
@@ -361,7 +360,8 @@ CONTAINS
     INTEGER, PARAMETER :: v_max = 15
          
     INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: J_CON
-    INTEGER, DIMENSION(:,:),   ALLOCATABLE :: cn!, edge_ele
+    INTEGER, DIMENSION(:,:),   ALLOCATABLE :: cn, cn_
+    INTEGER, DIMENSION(:,:),   ALLOCATABLE :: edge_ele_
     INTEGER, DIMENSION(:),     ALLOCATABLE :: seg_b
 
     LOGICAL :: boundary
@@ -377,13 +377,13 @@ CONTAINS
 
     ALLOCATE ( J_CON(N_nodes, v_max, 2) )
           
-    ALLOCATE ( cn(2, N_seg), edge_ele(2, N_seg) )
+    ALLOCATE ( cn_(2, N_seg), edge_ele_(2, N_seg) )
 
-    J_CON = 0; cn = 0
+    J_CON = 0; cn_ = 0
       
     found_seg = 0; ig0 = 0
       
-    edge_ele = 0
+    edge_ele_ = 0
 
     !
     !------------------------------------------------------------------------
@@ -401,8 +401,6 @@ CONTAINS
 
           i = MOD(k, MIN(k+1, Nv)) + 1
           j = MOD(i, MIN(k+2, Nv)) + 1
-          !j = MOD(k, MIN(k+1, Nv)) + 1
-          !is_1 = ele(jt)%verts(k)
           
           is_1 = ele(jt)%verts(i)          
           is_2 = ele(jt)%verts(j)
@@ -415,11 +413,11 @@ CONTAINS
                
                  ig0 = J_CON(is_1, kv, 2)
                                    
-                 cn_1 = ABS(cn(1, ig0))
+                 cn_1 = ABS(cn_(1, ig0))
                   
-                 cn(1, ig0) = -cn(1, ig0)
+                 cn_(1, ig0) = -cn_(1, ig0)
                   
-                 cn_2 = cn(2, ig0)
+                 cn_2 = cn_(2, ig0)
                   
                  IF ( is_1 == cn_1 .AND. is_2 == cn_2 ) THEN
 
@@ -442,7 +440,7 @@ CONTAINS
                                       
                  ENDIF
                   
-                 edge_ele(2, ig0) =  jt
+                 edge_ele_(2, ig0) =  jt
                           
                  GOTO 210
           
@@ -459,11 +457,11 @@ CONTAINS
                
                  ig0 = J_CON(is_2, kv, 2)
                                    
-                 cn_1 = ABS(cn(1, ig0))
+                 cn_1 = ABS(cn_(1, ig0))
                   
-                 cn(1, ig0) = -cn(1, ig0)
+                 cn_(1, ig0) = -cn_(1, ig0)
                   
-                 cn_2 = cn(2, ig0)
+                 cn_2 = cn_(2, ig0)
                   
                  IF ( is_1 == cn_1 .AND. is_2 == cn_2 ) THEN
                     
@@ -486,7 +484,7 @@ CONTAINS
                   
                  ENDIF                 
                   
-                 edge_ele(2, ig0) =  jt                 
+                 edge_ele_(2, ig0) =  jt                 
                   
                  GOTO 210                
                
@@ -520,20 +518,42 @@ CONTAINS
            J_CON(is_2, kv, 1) = is_1
            J_CON(is_2, kv, 2) = found_seg
          
-           cn(1, found_seg) = -is_1
-           cn(2, found_seg) =  is_2
+           cn_(1, found_seg) = -is_1
+           cn_(2, found_seg) =  is_2
          
            ig0 = found_seg
                   
-           edge_ele(1, ig0) =  jt
+           edge_ele_(1, ig0) =  jt
                     
 210        CONTINUE   
          
         ENDDO
          
-     ENDDO
-          
+     ENDDO  
+               
      DEALLOCATE (J_CON)
+
+     !-----------------------
+     ! True segment structure
+     !-----------------------------------------
+     N_seg = COUNT(cn_(1, :) /= 0)
+
+     ALLOCATE(       cn(2, N_seg) )
+     ALLOCATE( edge_ele(2, N_seg) )
+
+     DO iseg = 1, N_seg
+
+        IF( cn_(1, iseg) /= 0 ) THEN
+
+                 cn(:, iseg) = cn_(:, iseg)
+           edge_ele(:, iseg) = edge_ele_(:, iseg)
+
+        ENDIF
+
+     ENDDO
+     
+
+     DEALLOCATE (cn_, edge_ele_)
 
      !
      !---------------------------------------------------------------------------
@@ -545,7 +565,6 @@ CONTAINS
      found_segb = 0
       
      DO iseg = 1, N_seg
-      
         IF (cn(1, iseg) < 0) THEN
             
            found_segb = found_segb + 1
@@ -799,6 +818,7 @@ CONTAINS
        IF (type_dummy /= GMSH_TRIANGLE) EXIT
       
        N_tri = N_tri + 1
+
     ENDDO
 
     BACKSPACE(unit)
@@ -813,7 +833,8 @@ CONTAINS
            ALLOCATE( ele(i)%verts(3) )
     
            READ(unit, *) dummy, dummy, dummy, dummy, dummy, &
-                         ele(i)%verts(3), ele(i)%verts(2), ele(i)%verts(1) 
+                          ele(i)%verts(3), ele(i)%verts(2), ele(i)%verts(1) ! square
+                        ! ele(i)%verts(1), ele(i)%verts(2), ele(i)%verts(3) 
         ENDDO
 
     ENDIF
@@ -846,4 +867,96 @@ CONTAINS
   END SUBROUTINE read_gmshMesh
   !===========================
 
+  !=======================================
+  SUBROUTINE read_MeshFBx(unit, mesh_file)
+  !=======================================
+
+    IMPLICIT NONE
+
+    INTEGER,           INTENT(IN) :: unit
+    CHARACTER(len=64), INTENT(IN) :: mesh_file
+    !==========================================
+    CHARACTER(len=64) :: Key
+    INTEGER :: i, j, dummy
+    INTEGER :: ierror
+    !==========================================
+
+    OPEN(UNIT, FILE = mesh_file, ACTION = 'READ', IOSTAT = ierror)
+    IF (ierror /= 0) THEN
+       WRITE(*,*) 'ERROR: Impossible to open mehs file ', TRIM(ADJUSTL(mesh_file))
+       WRITE(*,*) 'STOP'     
+       STOP
+    ENDIF
+
+    WRITE(*,*)
+    WRITE(*,*) 'Getting mesh from ', TRIM(ADJUSTL(mesh_file)),' ...'
+
+    READ(unit, *)
+    READ(unit, *) Key
+
+    DO
+
+       SELECT CASE(TRIM(Key))
+
+       CASE("Dimension")
+
+          READ(unit, *) dummy !  N_dim
+          READ(unit, *) Key
+
+       CASE("Vertices")
+
+          READ(unit, *) N_nodes
+
+          ALLOCATE( rr_nodes(N_dim, N_nodes) )
+
+          DO j = 1, N_nodes     
+             READ(unit, *) rr_nodes(:, j), dummy
+          ENDDO
+
+          WRITE(*,*) '   Found', N_nodes, 'nodes'
+
+          READ(unit, *) Key
+
+       CASE("Edges")
+
+          READ(unit, *) dummy ! skip edge
+
+          READ(unit, *) Key
+
+       CASE("Triangles")
+
+             READ(unit, *) N_ele_mesh
+
+             ALLOCATE( ele(N_ele_mesh) )
+
+             DO i = 1, N_ele_mesh
+
+                ALLOCATE( ele(i)%verts(3) )
+                
+                READ(unit, *) ele(i)%verts(:), dummy
+ 
+             ENDDO
+
+             WRITE(*,*) '   Found', N_ele_mesh, 'triangles'
+
+             READ(unit, *) Key
+
+       CASE("End")
+
+          EXIT
+
+       CASE DEFAULT
+
+          WRITE(*,*) 'ERROR: unknown element'
+          STOP
+
+       END SELECT
+
+    END DO
+
+    CLOSE(unit)
+
+  END SUBROUTINE read_MeshFBx
+  !==========================  
+  
 END MODULE geometry

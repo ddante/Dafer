@@ -1,0 +1,87 @@
+MODULE LDA_method
+
+  USE Element_class
+  USE geometry,       ONLY: N_dim, elements
+  USE init_problem,   ONLY: pb_type
+  USE models,         ONLY: advection_speed, source_term
+  USE init_problem,   ONLY: is_visc, visc
+
+  IMPLICIT NONE
+  PRIVATE
+
+  PUBLIC :: LDA_scheme
+  
+CONTAINS
+
+  !====================================================
+  SUBROUTINE LDA_scheme(ele, Phi_tot, u, Phi_i, inv_dt)
+  !====================================================
+
+    IMPLICIT NONE
+
+    TYPE(element),                INTENT(IN) :: ele
+    REAL(KIND=8),                 INTENT(IN)  :: Phi_tot
+    REAL(KIND=8), DIMENSION(:),   INTENT(IN)  :: u
+    REAL(KIND=8), DIMENSION(:),   INTENT(OUT) :: Phi_i
+    REAL(KIND=8),                 INTENT(OUT) :: inv_dt
+    !---------------------------------------------------
+
+    INTEGER :: Ns, j
+
+    REAL(KIND=8) :: Re_h
+
+    REAL(KIND=8) :: u_m, x_m, y_m, N_m
+    REAL(KIND=8), DIMENSION(N_dim) :: a_m
+
+    REAL(KIND=8), DIMENSION(SIZE(Phi_i)) :: K_i, beta_i
+    !---------------------------------------------------
+
+    Ns = ele%N_points
+    
+    !-----------
+    ! Mean state
+    !-------------------------------------------------
+    u_m = SUM(u) / REAL(Ns)
+
+    x_m = SUM(ele%Coords(1, :)) / REAL(Ns)
+    y_m = SUM(ele%Coords(2, :)) / REAL(Ns)
+
+    a_m = advection_speed(pb_type, u_m, x_m, y_m)
+
+    !------------
+    ! LDA scheme
+    !-------------------------------------------------
+    N_m = 0.d0
+    
+    DO j = 1, Ns
+
+       K_i(j) = 0.5 * DOT_PRODUCT(a_m, ele%rd_n(:, j))
+
+       K_i(j) = MAX(0.d0, K_i(j))
+       
+       N_m = N_m + K_i(j)   
+       
+    ENDDO
+
+    N_m = 1.d0/N_m
+    
+    beta_i = K_i*N_m
+
+    IF (is_visc) THEN
+
+       Re_h = SUM(K_i) / visc
+
+       beta_i = beta_i + (1.d0/(3.d0*Re_h))
+       beta_i = beta_i / (1.d0 + 1.d0/Re_h) 
+
+    ENDIF
+    
+    phi_i = beta_i * Phi_tot
+
+    ! Time step
+    inv_dt = 3.d0*(SUM(K_i) + visc)
+
+  END SUBROUTINE LDA_scheme
+  !========================
+  
+END MODULE LDA_method

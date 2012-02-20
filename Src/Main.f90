@@ -3,7 +3,7 @@ PROGRAM main
   USE init_problem,      ONLY: read_param, initialization, order, &
                                ite_max, toll_res
 
-  USE geometry,          ONLY: read_gmshMesh, init_elements
+  USE geometry,          ONLY: read_gmshMesh, read_MeshFBx, init_elements
 
   USE time_integration
 
@@ -14,7 +14,7 @@ PROGRAM main
   !------------------------------------------------
   CHARACTER(len=64) :: param_file, mesh_file
 
-  REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: uu
+  REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: uu, Pe
   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: rhs
 
   REAL(KIND=8) :: res
@@ -42,12 +42,13 @@ PROGRAM main
  ! File mesh
  UNIT = 2
  CALL read_gmshMesh(UNIT, mesh_file)
+! CALL read_MeshFBx (UNIT, mesh_file)
 
  !---------------
  ! Pre-processing
  !------------------------------------------------
  CALL Init_Elements(Order)
-   
+ 
  !---------------
  ! Initialization
  !------------------------------------------------
@@ -71,6 +72,9 @@ PROGRAM main
  !----------------
  ! Post-processing
  !----------------------------------------------
+!!$ ALLOCATE( Pe(SIZE(uu)) )
+!!$ Pe = Nodal_Pe(uu)
+
  CALL plot_procedure(uu)
 
  CALL compute_error(uu)

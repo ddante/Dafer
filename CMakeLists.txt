@@ -24,6 +24,8 @@ SET(QUADRATURE_FILES
 SET(SCHEMES_FILES
   Src/Schemes/Num_Scheme.f90
   Src/Schemes/LLxFS_method.f90
+  Src/Schemes/LDA_method.f90
+  Src/Schemes/LW_method.f90
   Src/Schemes/Gradient_Reconstruction.f90
 )
 
@@ -43,6 +45,7 @@ SET(SOURCES
   ${QUADRATURE_FILES}
   ${SCHEMES_FILES}
   ${MAIN_FILES}
+  Src/test_gradient.f90
 )
 
 ADD_EXECUTABLE(solver.exe ${SOURCES})

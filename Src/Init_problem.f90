@@ -1,7 +1,7 @@
 MODULE init_problem
 
   USE Geometry,       ONLY: N_dofs, elements,  N_elements
-  USE Models,         ONLY: strong_bc, detect_source
+  USE Models,         ONLY: strong_bc, detect_source, exact_solution
 
   IMPLICIT NONE
 
@@ -13,9 +13,10 @@ MODULE init_problem
   INTEGER           :: scheme_type
   INTEGER           :: time_int
   INTEGER           :: pb_type
-  INTEGER           :: ite_max      
+  INTEGER           :: ite_max
   REAL(KIND=8)      :: CFL
-  REAL(KIND=8)      :: toll_res      
+  REAL(KIND=8)      :: toll_res
+  LOGICAL           :: is_visc
   REAL(KIND=8)      :: visc
   LOGICAL           :: with_source
   !=======================================
@@ -23,10 +24,10 @@ MODULE init_problem
   !=======================================
 
   PUBLIC :: read_param, initialization
-  PUBLIC :: pb_name, order,              &
-            scheme_type, time_int,       &
-            pb_type, CFL, visc, ite_max, &
-            toll_res, with_source
+  PUBLIC :: pb_name, order, time_int,   &
+            scheme_type, pb_type,       &
+            is_visc, visc, with_source, &
+            CFL, ite_max, toll_res
   !=======================================
 
 CONTAINS
@@ -98,7 +99,6 @@ CONTAINS
     CHARACTER(len=64), INTENT(IN) :: param_file
     !===========================================
 
-    LOGICAL :: is_visc
     INTEGER :: ierror
      
     OPEN(unit, FILE = param_file, ACTION = 'READ', IOSTAT = ierror)

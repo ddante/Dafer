@@ -908,9 +908,9 @@ CONTAINS
           WRITE(*,*) 'ERROR: failed trianlge allocation'
        ENDIF
 
-       CALL gradient_trace(e, if, p_D_phi)
-
        CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
+
+       CALL gradient_trace(e, if, p_D_phi)
 
        CALL seg%face_quadrature(p_D_phi)
          

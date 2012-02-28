@@ -13,16 +13,21 @@ MODULE models
                          LIN_VISC_ADVEC     = 3, &
                          SMITH_HUTTON       = 4, &
                          PERAIRE_ADVEC_DIFF = 5, &
-                         ADVECTION_SOURCE   = 6
+                         ADVECTION_SOURCE   = 6, &
+                         MANUFACTED_SOURCE  = 7, &
+                         TRANSPORT_REACTION = 8, &
+                         BOUNDARY_LAYER     = 9
    !===============================================
    
-   REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)                         
+   REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
    REAL(KIND=8), PARAMETER :: theta = 100.d0
+   REAL(KIND=8), PARAMETER :: mu_br = 0.01d0
+   REAL(KIND=8), PARAMETER :: c_bl  = 0.059d0
    !===============================================
 
-   PUBLIC :: advection_speed, flux_function,         & 
-             exact_solution, strong_bc, source_term, &
-             detect_source
+   PUBLIC :: advection_speed, advection_flux, &
+             diffusion_flux, exact_solution,  &
+             strong_bc, source_term, detect_source
    !===============================================
 
  CONTAINS
@@ -80,6 +85,23 @@ MODULE models
             a(1) = y
             a(2) = 1.d0 - x
             
+         CASE(MANUFACTED_SOURCE)
+
+            a(1) = 0.d0
+            a(2) = 1.d0
+
+         CASE(TRANSPORT_REACTION)
+
+            a(1) =  y
+            a(2) = -x
+
+            a = a / SQRT(x*x + y+y)
+
+         CASE(BOUNDARY_LAYER)
+
+            a(1) = 1.d0
+            a(2) = 0.d0
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -92,9 +114,9 @@ MODULE models
    END fUNCTION advection_speed
    !===========================
 
-   !======================================================
-   FUNCTION flux_function(type_pb, uu, x, y)  RESULT(flux)
-   !======================================================
+   !=======================================================
+   FUNCTION advection_flux(type_pb, uu, x, y)  RESULT(flux)
+   !=======================================================
    !
    ! Flux of the bidimensional problem 
    ! written in quasi-linear form
@@ -144,7 +166,24 @@ MODULE models
 
             flux(1) = y*uu
             flux(2) = (1.d0 - x)*uu
-      
+
+         CASE(MANUFACTED_SOURCE)            
+
+            flux(1) = 0.d0
+            flux(2) = uu
+
+         CASE(TRANSPORT_REACTION)            
+
+            flux(1) =  y * uu
+            flux(2) = -x * uu
+
+            flux = flux / SQRT(x*x + y*y)
+
+         CASE(BOUNDARY_LAYER)
+
+            flux(1) = uu
+            flux(2) = 0.d0
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -154,22 +193,64 @@ MODULE models
       
       END SELECT
    
-   END FUNCTION flux_function
-   !=========================
+   END FUNCTION advection_flux
+   !==========================
 
-   !================================================
-   FUNCTION source_term(type_pb, uu, x, y) RESULT(S)
-   !================================================
+   !=============================================================
+   FUNCTION diffusion_flux(type_pb, mu, D_uu, x, y)  RESULT(flux)
+   !=============================================================
+   !
+   ! Flux of the bidimensional problem 
+   !
+   IMPLICIT NONE
+   
+      INTEGER,                    INTENT(IN) :: type_pb
+      REAL(KIND=8),               INTENT(IN) :: mu
+      REAL(KIND=8), DIMENSION(:), INTENT(IN) :: D_uu
+      REAL(KIND=8),               INTENT(IN) :: x, y
+      
+      REAL(KIND=8), DIMENSION(2) :: flux
+      !------------------------------------------------
+      
+      SELECT CASE (type_pb)
+         
+         CASE(LIN_VISC_ADVEC)
+
+            flux = mu * D_uu
+
+         CASE(BOUNDARY_LAYER)
+
+            flux = mu * D_uu
+
+         CASE DEFAULT
+
+!!$            WRITE(*,*) 'Problem of unknow type.'
+!!$            WRITE(*,*) 'STOP!'
+!!$            
+!!$            STOP
+
+            RETURN
+
+      END SELECT         
+
+   END FUNCTION diffusion_flux
+   !==========================
+       
+   !====================================================
+   FUNCTION source_term(type_pb, uu, mu, x, y) RESULT(S)
+   !====================================================
    IMPLICIT NONE
 
       INTEGER,      INTENT(IN) :: type_pb
       REAL(KIND=8), INTENT(IN) :: uu
+      REAL(KIND=8), INTENT(IN) :: mu
       REAL(KIND=8), INTENT(IN) :: x, y
       
       REAL(KIND=8) :: S
       !------------------------------------
 
-      REAL(KIND=8) :: r
+      REAL(KIND=8) :: r, c, t1, t2, t3, t9, t13, &
+                         t14, t15, t16, t24, t25, t27
       !------------------------------------
       
       SELECT CASE (type_pb)
@@ -184,14 +265,43 @@ MODULE models
             S = 0.d0
          ENDIF
          
+      CASE(MANUFACTED_SOURCE)
          
+         s = DSIN(PI*x)*DCOS(PI*x)*DCOS(PI*y)*DCOS(PI*y)*PI - &
+             DSIN(PI*x)*DCOS(PI*x)*DSIN(PI*y)*DSIN(PI*y)*PI
+
+      CASE(TRANSPORT_REACTION)
+         
+         s = mu_br*uu
+
+      CASE(BOUNDARY_LAYER)
+
+         t1 = c_bl * mu
+         t2 = t1 * x
+         t3 = SQRT(t2)
+         t9 = EXP(-y / t3)
+         t13 = c_bl ** 2
+         t14 = mu ** 2
+         t15 = t13 * t14
+         t16 = x ** 2
+         t24 = y ** 2
+         t25 = 0.1D1 / c_bl
+         t27 = 0.1D1 / mu
+         
+         s = -y / t3 / t2 * t1 * t9 / 0.2D1 - mu * &
+              (0.3D1 / 0.4D1 * y / t3 / t16 * t9 - &
+              t24 * t25 * t27 / x / t16 * t9 / 0.4D1 - t25 * t27 / x * t9)
+
+
       CASE DEFAULT
 
-         WRITE(*,*) 'Problem of unknow type.'         
-         WRITE(*,*) 'STOP!'
-         
-         STOP
-         
+!!$         WRITE(*,*) 'Problem of unknow type.'         
+!!$         WRITE(*,*) 'STOP!'
+!!$         
+!!$         STOP
+
+         RETURN
+
       END SELECT
       
    END FUNCTION source_term
@@ -208,14 +318,24 @@ MODULE models
      LOGICAL :: logic
      !------------------------------
 
-     logic = .FALSE.
+     SELECT CASE(type_pb)
 
-     IF (type_pb == ADVECTION_SOURCE) logic = .TRUE.
+        CASE( ADVECTION_SOURCE,   &
+              MANUFACTED_SOURCE,  &
+              TRANSPORT_REACTION, &
+              BOUNDARY_LAYER )
+
+           logic = .TRUE.
+
+        CASE DEFAULT
+
+           logic = .FALSE.
+
+        END SELECT        
      
    END FUNCTION detect_source
    !=========================
-
-   
+ 
    !===========================================
    SUBROUTINE strong_bc(type_pb, visc, uu, rhs)
    !===========================================
@@ -245,15 +365,15 @@ MODULE models
       
       DO jt = 1, N_elements
 
-         Nv = element(jt)%Npoints
+         Nv = elements(jt)%p%N_points
 
          ALLOCATE( is(Nv), is_loc(Nv), u_l(Nv), rhs_l(Nv) )
          ALLOCATE( coord(N_dim, Nv) )
       
-         is = element(jt)%Nu
+         is = elements(jt)%p%NU
          
          DO i = 1, N_dim
-            coord(i, :) = element(jt)%coord(i, :)
+            coord(i, :) = elements(jt)%p%Coords(i, :)
          ENDDO
 
            u_l(:) =  uu(is)
@@ -292,7 +412,19 @@ MODULE models
          CASE(ADVECTION_SOURCE)
 
             CALL bc_advection_source()
-                        
+
+         CASE(MANUFACTED_SOURCE)
+
+            CALL bc_manufacted_source()
+
+         CASE(TRANSPORT_REACTION)
+
+            CALL bc_transport_reaction()
+
+         CASE(BOUNDARY_LAYER)
+
+            CALL bc_boundary_layer()
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -598,7 +730,99 @@ CONTAINS
       
       END SUBROUTINE bc_advection_source
       !.................................
-         
+
+      !................................
+      SUBROUTINE bc_manufacted_source()
+      !
+      ! Square [0,1]x[0,1]
+      !
+      IMPLICIT NONE
+
+         DO k = 1, Nv
+            IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                 ABS(coord(2, k)) >= 0.d0) THEN
+               u_l(k) = 1.d0
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0) THEN
+               u_l(k) = 1.d0
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = 1.d0
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO        
+      
+      END SUBROUTINE bc_manufacted_source
+      !..................................
+
+      !.................................
+      SUBROUTINE bc_transport_reaction()
+      !
+      ! arc circle r=[0.1, 1.0]
+      !
+      IMPLICIT NONE
+
+         DO k = 1, Nv
+            IF ( coord(1, k) <= 0.d0 ) THEN
+               u_l(k) = u_ex_transport_reaction(coord(1, k), &
+                                                coord(2, k) )
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+      
+      END SUBROUTINE bc_transport_reaction
+      !...................................
+
+      !.............................
+      SUBROUTINE bc_boundary_layer()
+      !
+      ![0.05, 1.05]x[0, 0.001]
+      ! 
+      IMPLICIT NONE
+
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_bl(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 0.05d0)) < 0.d0 ) THEN
+               u_l(k) = u_ex_bl(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+
+      END SUBROUTINE bc_boundary_layer
+      !...............................
+
    END SUBROUTINE strong_bc
    !=======================
    
@@ -666,10 +890,29 @@ CONTAINS
                        
          phi = -(1.d0 - x**2)*(1 - y**2)         
          uu_ex = 1.d0 + TANH(theta*(1.d0 - 2.d0*SQRT(1.d0 + phi)))
-                        
-      CASE DEFAULT
+
+      CASE(MANUFACTED_SOURCE)
+
+         uu_ex = 1.d0 + DSIN(PI*x)*DCOS(PI*x)*DSIN(PI*y)*DCOS(PI*y)
          
-         uu_ex = 0.0
+      CASE(TRANSPORT_REACTION)
+
+         uu_ex = u_ex_transport_reaction(x, y)
+
+      CASE(BOUNDARY_LAYER)
+
+         IF (nu > 0.d0) THEN    
+            uu_ex = u_ex_bl(x, y, nu)	          
+         ELSE	    
+            WRITE(*,*) 'ERROR: LIN_VISC_ADVEC'            
+            WRITE(*,*) 'STOP!'
+            STOP       
+         ENDIF
+
+      CASE DEFAULT
+
+         stop
+         !uu_ex = 0.0
       
       END SELECT
    
@@ -710,12 +953,12 @@ CONTAINS
    !
    IMPLICIT NONE
    
-      REAL(KIND=8),               INTENT(IN) :: x
-      REAL(KIND=8),               INTENT(IN) :: y
-      REAL(KIND=8),               INTENT(IN) :: nu
+      REAL(KIND=8), INTENT(IN) :: x
+      REAL(KIND=8), INTENT(IN) :: y
+      REAL(KIND=8), INTENT(IN) :: nu
       
       REAL(KIND=8) :: f
-      !--------------------------------------------
+      !-----------------------------
       
       IF (nu > 0.d0) THEN
 	 f = -DCOS(2.d0*PI*x)* & 
@@ -728,5 +971,43 @@ CONTAINS
    
     END FUNCTION visc_advection
     !==========================
+
+    !===============================================
+    FUNCTION u_ex_transport_reaction(x, y) RESULT(f)
+    !===============================================
+    IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: x
+      REAL(KIND=8), INTENT(IN) :: y
+      
+      REAL(KIND=8) :: f
+      !--------------------------------------------
+
+      REAL(KIND=8) :: r
+
+      r = SQRT( x*x + y*y )
+      
+      f = EXP( mu_br*r * ASIN(y/r) ) * ATAN( (r - 0.5d0)/0.1 )
+    
+    END FUNCTION u_ex_transport_reaction
+    !===================================
+
+    !===================================
+    FUNCTION u_ex_bl(x, y, nu) RESULT(f)
+    !===================================
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: x
+      REAL(KIND=8), INTENT(IN) :: y
+      REAL(KIND=8), INTENT(IN) :: nu
+
+      REAL(KIND=8) :: f
+      !------------------------------
+
+      f = 1.d0 - EXP( -y/SQRT(c_bl * nu * x) )
+      
+    END FUNCTION u_ex_bl
+    !===================
 
 END MODULE models

@@ -251,7 +251,7 @@ CONTAINS
  
           Stab_D_phi = DOT_PRODUCT(a_q, D_phi_q(:, i, iq))
 
-          Stab_D_phi = Stab_D_phi - D_muD_phi_q(i)
+          !Stab_D_phi = Stab_D_phi - D_muD_phi_q(i)
                    
           Stab(i) = Stab(i) + Stab_D_u * Stab_D_phi * w(iq)
           

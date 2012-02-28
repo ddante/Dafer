@@ -57,8 +57,6 @@ CONTAINS
     INTEGER :: Ns, je, i_f, k, iq, n_ele, istat
     !----------------------------------------------
 
-!!$real(kind=8), dimension(2) :: int_G
-
     rhs = 0.d0
 
     Dt_v = 0.d0

@@ -1,10 +1,11 @@
 MODULE LW_method
 
   USE Element_class
-  USE geometry,       ONLY: N_dim, elements
-  USE init_problem,   ONLY: pb_type
-  USE models,         ONLY: advection_speed, source_term
-  USE init_problem,   ONLY: is_visc, visc
+  USE geometry,         ONLY: N_dim, elements
+  USE init_problem,     ONLY: pb_type
+  USE models,           ONLY: advection_speed, source_term
+  USE init_problem,     ONLY: is_visc, visc
+  USE Quadrature_rules, ONLY: int_d_G
 
   IMPLICIT NONE
   PRIVATE
@@ -28,10 +29,13 @@ CONTAINS
     !--------------------------------------------------
     INTEGER :: Ns, j, iq, i
 
-    REAL(KIND=8) :: u_m, x_m, y_m, N_m, mod_am
-    REAL(KIND=8), DIMENSION(N_dim) :: a_m
+    REAL(KIND=8) :: u_m, x_m, y_m, s_i, s_q, &
+                    N_m, mod_am, T_par, K_plus
 
-    REAL(KIND=8), DIMENSION(SIZE(Phi_i)) :: K_i, beta_i
+    REAL(KIND=8), DIMENSION(N_dim) :: a_m, int_G_i, a_i, a_q
+
+    REAL(KIND=8), DIMENSION(SIZE(Phi_i)) :: K_i, beta_i, &
+                                            omega_i
 
     REAL(KIND=8) :: alpha, tau, Lr, Tr, Re_l, l_min, l_max
     !---------------------------------------------------
@@ -69,64 +73,134 @@ CONTAINS
     !-----------
     ! LW wcheme
     !-------------------------------------------------
-    l_max = 0.0; l_min = HUGE(1.d0)
+    l_max = 0.0; l_min = HUGE(1.d0); K_plus = 0.0
 
-    DO j = 1, Ns
+    DO j = 1, ele%N_verts !Ns
 
        K_i(j) = 0.5d0 * DOT_PRODUCT(a_m, ele%rd_n(:, j))
 
        l_max = MAX( l_max, SQRT( SUM(ele%rd_n(:, j)**2)) )
 
        l_min = MIN( l_min, SQRT( SUM(ele%rd_n(:, j)**2)) )
+
+      !K_plus = K_plus + MAX( K_i(j), 0.d0 )
+       K_plus = K_plus + ABS( K_i(j) )
        
     ENDDO
 
+    K_i    = K_i    / ele%volume
+    K_plus = K_plus / ele%volume
+
     mod_am = SQRT( SUM( a_m**2 ) )
-    
-!!$    beta_i = ( 1.d0 / 3.d0 ) + &
-!!$             (0.5d0 * l_max * K_i)/(mod_am * ele%volume)
 
-    DO i = 1, Ns
+!   T_par = 0.25d0 * ele%volume / MAXVAL(ABS(K_i))
+!   T_par = 0.5d0 * ele%volume / K_plus
+    T_par = 2.d0 / ( K_plus * ele%N_verts )
 
-       beta_i(i) = omega(i) + 
-                   0.5d0 * (l_max / (mod_am * ele%volume)) * int_d_G(ele, i)
-              
-    ENDDO
-    
+    omega_i = 1.d0/REAL(Ns, 8)
 
-    phi_i = beta_i * Phi_tot
+!!$    DO i = 1, Ns
+!!$
+!!$       int_G_i = int_d_G(ele, i)
+!!$
+!!$       beta_i(i) = omega_i(i) + &
+!!$                   omega_i(i) * DOT_PRODUCT(a_m, int_G_i) / K_plus
+!!$
+!!$    !   beta_i(i) = omega_i(i) + &
+!!$    !              (T_par / ele%volume) * DOT_PRODUCT(a_m, int_G_i)
+!!$                 
+!!$    ENDDO
+!!$    
+!!$    phi_i = beta_i * Phi_tot
 
-    !--------------
-    ! Viscous part
-    !--------------------------------------------------------
-    IF(is_visc) THEN
+    phi_i = omega_i * Phi_tot
 
-              w => ele%w_q
-        D_phi_q => ele%D_phi_q
-          phi_q => ele%phi_q
+          w => ele%w_q
+    D_phi_q => ele%D_phi_q
+      phi_q => ele%phi_q
 
-       DO iq = 1, ele%N_quad
 
-          Dr_u_q = 0.d0 ! Reconstructed gradient
-          D_u_q = 0.d0 ! Continuous gradient
+    DO iq = 1, ele%N_quad
 
-          DO i = 1, Ns
+       Dr_u_q = 0.d0 ! Reconstructed gradient      
+        D_u_q = 0.d0 ! Continuous gradient
+          a_q = 0.d0 
+          s_q = 0.d0
 
-             Dr_u_q = Dr_u_q + phi_q(i, iq) * D_u(:, i)
-              D_u_q = D_u_q  + D_phi_q(:, i, iq) * u(i)
+       DO i = 1, Ns
 
-          ENDDO
+          Dr_u_q = Dr_u_q + phi_q(i, iq) * D_u(:, i)
+           D_u_q = D_u_q  + D_phi_q(:, i, iq) * u(i)
 
-          DO i = 1, Ns
+          a_i = advection_speed( pb_type, u(i),    &
+                                 ele%Coords(1, i), &
+                                 ele%Coords(2, i)  )
 
-             phi_i(i) = phi_i(i) + &
-                        visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
+          s_i = source_term( pb_type, u(i), visc, &
+                             ele%Coords(1, i),    &
+                             ele%Coords(2, i)     )
 
-          ENDDO
+          a_q = a_q + phi_q(i, iq) * a_i
+
+          s_q = s_q + phi_q(i, iq) * s_i
 
        ENDDO
 
-    ENDIF
+       DO i = 1, Ns
+
+          !----------------
+          ! Advective part
+          !--------------------------------------------------------
+          phi_i(i) = phi_i(i) + &
+                     T_par * ( DOT_PRODUCT(a_q, D_u_q) - s_q ) * &
+                     DOT_PRODUCT(a_q, D_phi_q(:, i, iq)) * w(iq)
+
+          !--------------
+          ! Viscous part
+          !--------------------------------------------------------
+          IF(is_visc) THEN
+             
+             phi_i(i) = phi_i(i) + &
+                        visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
+
+          ENDIF
+
+       ENDDO
+
+    ENDDO
+
+
+!!$    !--------------
+!!$    ! Viscous part
+!!$    !--------------------------------------------------------
+!!$    IF(is_visc) THEN
+!!$
+!!$              w => ele%w_q
+!!$        D_phi_q => ele%D_phi_q
+!!$          phi_q => ele%phi_q
+!!$
+!!$       DO iq = 1, ele%N_quad
+!!$
+!!$          Dr_u_q = 0.d0 ! Reconstructed gradient
+!!$           D_u_q = 0.d0 ! Continuous gradient
+!!$
+!!$          DO i = 1, Ns
+!!$
+!!$             Dr_u_q = Dr_u_q + phi_q(i, iq) * D_u(:, i)
+!!$              D_u_q = D_u_q  + D_phi_q(:, i, iq) * u(i)
+!!$
+!!$          ENDDO
+!!$
+!!$          DO i = 1, Ns
+!!$
+!!$             phi_i(i) = phi_i(i) + &
+!!$                        visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
+!!$
+!!$          ENDDO
+!!$
+!!$       ENDDO
+!!$
+!!$    ENDIF
 
     ! Time step
     !--------------

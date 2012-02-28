@@ -252,6 +252,8 @@ MODULE models
       REAL(KIND=8) :: r, c, t1, t2, t3, t9, t13, &
                          t14, t15, t16, t24, t25, t27
       !------------------------------------
+
+      S = 0.d0
       
       SELECT CASE (type_pb)
 

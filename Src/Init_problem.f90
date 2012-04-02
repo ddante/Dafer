@@ -53,7 +53,7 @@ CONTAINS
       uu = 0.d0;  rhs = 0.d0
 
       with_source = detect_source(pb_type)
-     
+
       CALL strong_bc(pb_type, visc, uu, rhs)
 
       ! Delete a possible previous convergence history...
@@ -139,5 +139,27 @@ CONTAINS
    
   END SUBROUTINE read_param
   !========================
+
+  !=========================================
+  FUNCTION Init_with_ExactSol() RESULT(u_ex)
+  !=========================================
+    
+    IMPLICIT NONE
+
+    REAL(KIND=8), DIMENSION(N_dofs) :: u_ex
+    !--------------------------------------
+
+    INTEGER :: je, i
+    !--------------------------------------
+
+    DO je = 1, N_elements
+       DO i = 1, elements(je)%p%N_points
+          u_ex(elements(je)%p%NU(i)) = &
+               exact_solution(pb_type, elements(je)%p%Coords(:, i), visc)
+       ENDDO
+    ENDDO
+
+  END FUNCTION Init_with_ExactSol
+  !==============================    
 
 END MODULE init_problem

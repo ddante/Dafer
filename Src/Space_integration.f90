@@ -25,7 +25,7 @@ use test_gradient
   !================================================
 
   PRIVATE  
-  PUBLIC :: compute_rhs, Local_Pe
+  PUBLIC :: compute_rhs, Local_Pe, ClearGradients
 
 CONTAINS
 
@@ -140,10 +140,10 @@ CONTAINS
 !!$                   p_Du_1_q = p_Du_1_q + p_Dphi_1_q(:, k,iq)*u1(k) !*
 !!$                ENDDO                                              !*
 !!$                                                                   !*
-!!$                loc_ele%faces(i_f)%f%p_Du_1_q(:,iq) = p_Du_1_q     !*         
+!!$                loc_ele%faces(i_f)%f%p_Du_1_q(:,iq) = p_Du_1_q     !*
 !!$                loc_ele%faces(i_f)%f%p_Du_2_q(:,iq) = 0.d0         !*
 !!$                                                                   !*
-!!$             ENDDO                                                 !*            
+!!$             ENDDO                                                 !*
 
           ENDIF
 
@@ -155,7 +155,7 @@ CONTAINS
        !------------------------------------------------------------
        CALL distribute_residual(loc_ele, Phi_tot, u1, D_u1, Phi_i, inv_dt)
 
-       ! Gather the nadal residual
+       ! Gather the nodal residual
        rhs(Nu) = rhs(Nu) + Phi_i
        
        Dt_V(Nu) = Dt_V(Nu) + inv_dt
@@ -219,7 +219,7 @@ CONTAINS
        SS(i) = source_term(pb_type, u(i), visc, x, y)
 
        IF( PRESENT(D_u) ) THEN
-          ff_v(:, i) = diffusion_flux(pb_type, visc, D_u(:,i), x, y)                 
+          ff_v(:, i) = diffusion_flux(pb_type, visc, D_u(:,i), x, y)
        ENDIF
            
     ENDDO
@@ -238,6 +238,62 @@ CONTAINS
   END FUNCTION total_residual
   !==========================
 
+!!$  !=================================================
+!!$  FUNCTION Penalization_flux(ele, u) RESULT(Phi_pen)
+!!$  !=================================================
+!!$
+!!$    IMPLICIT NONE
+!!$    TYPE(element),                INTENT(IN) :: ele
+!!$    REAL(KIND=8), DIMENSION(:),   INTENT(IN) :: u
+!!$    
+!!$    REAL(KIND=8) :: Phi_pen
+!!$    !-----------------------------------------------
+!!$
+!!$    INTEGER,                      POINTER :: N_quad
+!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: n_1
+!!$    REAL(KIND=8), DIMENSION(:),   POINTER :: w
+!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_1_q
+!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_2_q
+!!$    INTEGER,      DIMENSION(:),   POINTER :: loc_con
+!!$    !-----------------------------------------------
+!!$
+!!$    REAL(KIND=8) :: Jump_D_u, C_ip
+!!$
+!!$    INTEGER :: jf, iq
+!!$    !-----------------------------------------------
+!!$
+!!$    C_ip = 0.05d0
+!!$    
+!!$    Phi_pen = 0.d0
+!!$
+!!$    DO jf = 1, ele%N_faces
+!!$
+!!$       N_quad     => ele%faces(jf)%f%N_quad      ! ok      
+!!$       n_1        => ele%faces(jf)%f%n_q         ! ok
+!!$       w          => ele%faces(jf)%f%w_q         ! ok      
+!!$       p_Du_1_q   => ele%faces(jf)%f%p_Du_1_q    ! ok
+!!$       p_Du_2_q   => ele%faces(jf)%f%p_Du_2_q    ! ok
+!!$       loc_con    => ele%faces(jf)%f%loc_con     ! ok
+!!$
+!!$       DO iq = 1, N_quad
+!!$
+!!$          !---------------
+!!$          ! Gradient Jump
+!!$          !-----------------------------------------------------------
+!!$          Jump_D_u = DOT_PRODUCT( p_Du_1_q(:, iq),  n_1(:, iq) ) + &
+!!$                     DOT_PRODUCT( p_Du_2_q(:, iq), -n_1(:, iq) )
+!!$
+!!$          Phi_pen = Phi_pen + w(iq) * visc * Jump_D_u 
+!!$
+!!$       ENDDO
+!!$
+!!$     ENDDO
+!!$
+!!$    Phi_pen = C_ip * Phi_pen
+!!$
+!!$  END FUNCTION Penalization_flux
+!!$  !=============================
+  
   !=====================================
   FUNCTION Local_Pe(ele, u) RESULT(l_Pe)
   !=====================================
@@ -250,11 +306,13 @@ CONTAINS
     REAL(KIND=8) :: l_Pe
     !---------------------------------------------
 
-    REAL(KIND=8) :: x_i, y_i, h
+    REAL(KIND=8) :: x_i, y_i, h, P
 
     REAL(KIND=8), DIMENSION(N_dim) :: a, gg, xx
 
     INTEGER :: N_v, i, j
+
+    REAL(KIND=8), PARAMETER ::  Pi = DACOS(-1.d0)
     !-------------------------------------------------
 
     N_v = ele%N_verts
@@ -278,11 +336,32 @@ CONTAINS
        
     ENDDO
 
-    h = ele%Volume / SQRT(N_v * h)
+!!$    h = 2.d0*ele%Volume / SQRT(N_v * h)
+
+    P = 0.d0
+    DO i = 1, ele%N_faces
+       P = P + SUM(ele%faces(i)%f%w_q)
+    ENDDO
+    
+    h = ele%Volume/P
 
     l_Pe = SQRT(SUM(a*a)) * h / visc
 
   END FUNCTION Local_Pe
   !====================
   
+  !==========================
+  SUBROUTINE ClearGradients()
+  !==========================
+
+    IMPLICIT NONE
+
+    IF( ALLOCATED(D_uu) ) DEALLOCATE( D_uu )
+
+    CALL DestroyPETSc()
+
+  END SUBROUTINE ClearGradients
+  !============================
+  
+
 END MODULE space_integration

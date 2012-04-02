@@ -35,49 +35,74 @@ PROGRAM main
   CALL get_command_argument(1, param_file)
   CALL get_command_argument(2, mesh_file)
    
- ! File param   
- UNIT = 1
- CALL read_param(UNIT, param_file)
+  ! File param   
+  UNIT = 1
+  CALL read_param(UNIT, param_file)
 
- ! File mesh
- UNIT = 2
- CALL read_gmshMesh(UNIT, mesh_file)
+  ! File mesh
+  UNIT = 2
+  CALL read_gmshMesh(UNIT, mesh_file)
 ! CALL read_MeshFBx (UNIT, mesh_file)
 
- !---------------
- ! Pre-processing
- !------------------------------------------------
- CALL Init_Elements(Order)
+  !---------------
+  ! Pre-processing
+  !------------------------------------------------
+  CALL Init_Elements(Order)
  
- !---------------
- ! Initialization
- !------------------------------------------------
- CALL Initialization(uu, rhs)
+  !---------------
+  ! Initialization
+  !------------------------------------------------
+  CALL Initialization(uu, rhs)
 
- ite = 1; res = 1.d0
+  ite = 1; res = 1.d0
 
- !----------------
- ! Solution update
- !-----------------------------------------------
- DO 
+  !----------------
+  ! Solution update
+  !-----------------------------------------------
+  DO 
 
-    CALL time_advance(ite, uu, rhs, res)
+     CALL time_advance(ite, uu, rhs, res)
     
-    IF (ite >= ite_max .OR. res < toll_res) EXIT
+     IF (ite >= ite_max .OR. res < toll_res) EXIT
  
-    ite = ite + 1
+     ite = ite + 1
+
+     IF( MOD(ite, 10000) == 0.0 ) THEN
+        CALL plot_procedure(uu)
+        CALL compute_error(uu)
+     ENDIF
  
- ENDDO
+  ENDDO
  
- !----------------
- ! Post-processing
- !----------------------------------------------
+  !----------------
+  ! Post-processing
+  !----------------------------------------------
+  CALL plot_procedure(uu)
+  CALL compute_error(uu)
+
+  ! End of Job
+  CALL FinalizeCode()
+
 !!$ ALLOCATE( Pe(SIZE(uu)) )
 !!$ Pe = Nodal_Pe(uu)
+!!$ CALL plot_procedure(Pe)
+  
+CONTAINS
+  
+  !========================
+  SUBROUTINE FinalizeCode()
+  !========================
 
- CALL plot_procedure(uu)
+    IMPLICIT NONE
 
- CALL compute_error(uu)
+    IF( ALLOCATED(uu) )  DEALLOCATE( uu )
+    IF( ALLOCATED(rhs) ) DEALLOCATE( rhs )
+    IF( ALLOCATED(Pe) )  DEALLOCATE( Pe )
+
+    CALL ClearAll()
+
+  END SUBROUTINE FinalizeCode
+  !==========================  
 
 END PROGRAM main
 

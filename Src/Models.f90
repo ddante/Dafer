@@ -16,17 +16,19 @@ MODULE models
                          ADVECTION_SOURCE   = 6, &
                          MANUFACTED_SOURCE  = 7, &
                          TRANSPORT_REACTION = 8, &
-                         BOUNDARY_LAYER     = 9
+                         BOUNDARY_LAYER     = 9, &
+                         PURE_DIFFUSION     = 10
    !===============================================
    
    REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
    REAL(KIND=8), PARAMETER :: theta = 100.d0
+   REAL(KIND=8), PARAMETER :: theta_xi = 0.d0
    REAL(KIND=8), PARAMETER :: mu_br = 0.01d0
    REAL(KIND=8), PARAMETER :: c_bl  = 0.059d0
    !===============================================
 
    PUBLIC :: advection_speed, advection_flux, &
-             diffusion_flux, exact_solution,  &
+             diffusion_flux, exact_solution, exact_grad, &
              strong_bc, source_term, detect_source
    !===============================================
 
@@ -67,8 +69,8 @@ MODULE models
              
 	 CASE(LIN_VISC_ADVEC)
 	 
-	    a(1) = 0.d0
-	    a(2) = 1.d0
+	    a(1) = 1.d0 * DSIN(theta_xi*PI/180.d0)
+	    a(2) = 1.d0 * DCOS(theta_xi*PI/180.d0)
 
          CASE(SMITH_HUTTON)
          
@@ -100,6 +102,11 @@ MODULE models
          CASE(BOUNDARY_LAYER)
 
             a(1) = 1.d0
+            a(2) = 0.d0
+
+         CASE(PURE_DIFFUSION)
+
+            a(1) = 0.d0
             a(2) = 0.d0
 
          CASE DEFAULT
@@ -149,8 +156,8 @@ MODULE models
 
 	 CASE(LIN_VISC_ADVEC)
 	 
-	    flux(1) = 0.d0
-            flux(2) = uu
+	    flux(1) = uu * DSIN(theta_xi*PI/180.d0)
+            flux(2) = uu * DCOS(theta_xi*PI/180.d0)
                   
          CASE(SMITH_HUTTON)
          
@@ -182,6 +189,11 @@ MODULE models
          CASE(BOUNDARY_LAYER)
 
             flux(1) = uu
+            flux(2) = 0.d0
+
+         CASE(PURE_DIFFUSION)
+
+            flux(1) = 0.d0
             flux(2) = 0.d0
 
          CASE DEFAULT
@@ -219,6 +231,10 @@ MODULE models
             flux = mu * D_uu
 
          CASE(BOUNDARY_LAYER)
+
+            flux = mu * D_uu
+
+         CASE(PURE_DIFFUSION)
 
             flux = mu * D_uu
 
@@ -427,6 +443,10 @@ MODULE models
 
             CALL bc_boundary_layer()
 
+         CASE(PURE_DIFFUSION)
+
+            CALL bc_pure_diffusion()
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -461,7 +481,7 @@ CONTAINS
 
          DO k = 1, Nv
             IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
-                 ABS(coord(2, k)) >= 0.d0) THEN
+                 ABS(coord(2, k)) >  0.d0) THEN
                u_l(k) = initial_profile(coord(1, k))
                rhs_l(k) = 0.d0
                n_loc = n_loc + 1
@@ -577,7 +597,7 @@ CONTAINS
 
          DO k = 1, Nv
             IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
-                 ABS(coord(2, k)) >= 0.d0 ) THEN
+                 ABS(coord(2, k)) >  0.d0 ) THEN
                u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
                rhs_l(k) = 0.d0
                n_loc = n_loc + 1
@@ -585,7 +605,7 @@ CONTAINS
                b_flag = .TRUE.             
             ENDIF
          ENDDO
-          
+
          DO k = 1, Nv           
             IF ( (ABS(coord(1, k)  - 1.d0)) <= 0.d0 ) THEN
                u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
@@ -595,9 +615,9 @@ CONTAINS
                b_flag = .TRUE.             
             ENDIF            
          ENDDO
-          
+
          DO k = 1, Nv
-            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+            IF ( ABS(coord(2, k)) <= 0.d0 )THEN
                u_l(k) =  visc_advection(coord(1, k), coord(2, k), visc)
                rhs_l(k) = 0.d0              
                n_loc = n_loc + 1              
@@ -605,7 +625,7 @@ CONTAINS
                b_flag = .TRUE.             
             ENDIF            
          ENDDO   
-             
+ 
       END SUBROUTINE bc_linviscadv
       !...........................
       
@@ -825,6 +845,58 @@ CONTAINS
       END SUBROUTINE bc_boundary_layer
       !...............................
 
+      !................................
+      SUBROUTINE  bc_pure_diffusion()
+      !
+      ! Square [0,1]x[0,1]
+      !
+      IMPLICIT NONE
+
+         DO k = 1, Nv
+            IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                 ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_pure_diff(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_pure_diff(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_pure_diff(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+ 
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+               u_l(k) = u_ex_pure_diff(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO 
+
+       END SUBROUTINE bc_pure_diffusion       
+       !..................................
+
    END SUBROUTINE strong_bc
    !=======================
    
@@ -867,14 +939,14 @@ CONTAINS
             
       CASE(BURGER)
                   
-         IF (y >= 0.5) THEN                                                                
+         IF (y >= 0.5) THEN
             IF (-2.d0*(x - 3.d0/4.d0) + (y - 0.5) <= 0) THEN
                uu_ex = -0.5
             ELSE
                uu_ex = 1.5   
             ENDIF               
          ELSE                        
-            uu_ex = MAX( -0.5, MIN( 1.5, ((x - 3.d0/4.d0)/(y - 0.5)) ) )                
+            uu_ex = MAX( -0.5, MIN( 1.5, ((x - 3.d0/4.d0)/(y - 0.5)) ) )
          ENDIF
 
 
@@ -883,9 +955,9 @@ CONTAINS
          IF (nu > 0.d0) THEN    
             uu_ex = visc_advection(x, y, nu)	          
          ELSE	    
-            WRITE(*,*) 'ERROR: LIN_VISC_ADVEC'            
+            WRITE(*,*) 'ERROR: LIN_VISC_ADVEC'
             WRITE(*,*) 'STOP!'
-            STOP       
+            STOP
          ENDIF                 
             
       CASE(SMITH_HUTTON)
@@ -911,6 +983,10 @@ CONTAINS
             STOP       
          ENDIF
 
+      CASE(PURE_DIFFUSION)
+
+         uu_ex = u_ex_pure_diff(x, y)
+
       CASE DEFAULT
 
          stop
@@ -920,6 +996,47 @@ CONTAINS
    
    END FUNCTION exact_solution
    !==========================   
+
+   !======================================================
+   FUNCTION exact_grad(type_pb, coord, nu) RESULT(G_uu_ex)
+   !======================================================
+   !
+   ! Compute the exact gradient solution
+   !
+   IMPLICIT NONE
+   
+      INTEGER,                    INTENT(IN) :: type_pb
+      REAL(KIND=8), DIMENSION(:), INTENT(IN) :: coord
+      REAL(KIND=8),               INTENT(IN) :: nu
+      
+      REAL(KIND=8), DIMENSION(2) :: G_uu_ex
+      !-------------------------------------------------
+      
+      REAL(KIND=8) :: x, y, r, phi    
+      !-------------------------------------------------
+
+      x = coord(1)
+      y = coord(2)
+      
+      SELECT CASE (type_pb)
+      
+      CASE(LIN_VISC_ADVEC)
+
+         G_uu_ex = grad_visc_advection(x, y, nu)
+         
+      CASE(PURE_DIFFUSION)
+
+         G_uu_ex = grad_pure_diff(x, y)
+
+      CASE DEFAULT
+
+         !stop
+         !G_uu_ex = 0.0
+         
+      END SELECT
+
+    END FUNCTION exact_grad
+    !======================      
 
    !====================================
    FUNCTION initial_profile(x) RESULT(f)
@@ -947,6 +1064,63 @@ CONTAINS
    END FUNCTION initial_profile
    !===========================
    
+   !================================================
+   FUNCTION grad_visc_advection(x, y, nu) RESULT(GG)
+   !================================================
+   !
+   ! Gradient of the viscous linear advection problem
+   !
+   IMPLICIT NONE
+   
+      REAL(KIND=8), INTENT(IN) :: x
+      REAL(KIND=8), INTENT(IN) :: y
+      REAL(KIND=8), INTENT(IN) :: nu
+      
+      REAL(KIND=8), DIMENSION(2) :: GG
+      !-----------------------------
+
+      REAL(KIND=8) :: t5, t6, t11, t12, t16, t17, t19, t22, t26
+      REAL(KIND=8) :: ax, ay
+      !--------------------------------
+
+      ax = DSIN(theta_xi*PI/180.d0)
+      ay = DCOS(theta_xi*PI/180.d0)
+      
+      IF (nu > 0.d0) THEN
+
+         t5 = 0.2D1 * PI * (ay*x - ax*y)
+         t6 = DSIN(t5)
+         t11 = PI ** 2
+         t12 = nu ** 2
+         t16 = DSQRT(0.1D1 + 0.16D2 * t11 * t12)
+         t17 = 0.1D1 - t16
+         t19 = 0.1D1 / nu
+         t22 = EXP((ax*x + ay*y) * t17 * t19 / 0.2D1)
+         t26 = DCOS(t5)
+         GG(1) = 0.2D1 * t6 * PI * ay * t22 - t26 * ax * t17 * t19 * t22 / 0.2D1
+
+         t5 = 0.2D1 * PI * (ay * x - ax * y)
+         t6 = DSIN(t5)
+         t11 = PI ** 2
+         t12 = nu ** 2
+         t16 = DSQRT(0.1D1 + 0.16D2 * t11 * t12)
+         t17 = 0.1D1 - t16
+         t19 = 0.1D1 / nu
+         t22 = EXP((ax*x + ay*y) * t17 * t19 / 0.2D1)
+         t26 = DCOS(t5)
+         GG(2) = -0.2D1 * t6 * PI * ax * t22 - t26 * ay * t17 * t19 * t22 / 0.2D1
+
+      ELSE
+
+         WRITE(*,*) 'ERROR: Visc zero'
+         WRITE(*,*) 'STOP!'
+         STOP
+
+      ENDIF
+   
+    END FUNCTION grad_visc_advection
+    !===============================
+
    !==========================================
    FUNCTION visc_advection(x, y, nu) RESULT(f)
    !==========================================
@@ -960,11 +1134,15 @@ CONTAINS
       REAL(KIND=8), INTENT(IN) :: nu
       
       REAL(KIND=8) :: f
+      REAL(KIND=8) :: eta, psi
       !-----------------------------
       
+      eta = DCOS(theta_xi*PI/180.d0)*x - DSIN(theta_xi*PI/180.d0)*y
+      psi = DSIN(theta_xi*PI/180.d0)*x + DCOS(theta_xi*PI/180.d0)*y
+
       IF (nu > 0.d0) THEN
-	 f = -DCOS(2.d0*PI*x)* & 
-	     EXP(0.5d0*y*( 1 - SQRT(1.d0 + 16.d0*(PI**2)*nu**2) )/nu)
+	 f = -DCOS(2.d0*PI*eta)* & 
+	     EXP(0.5d0*psi*( 1.d0 - SQRT(1.d0 + 16.d0*(PI**2)*nu**2) )/nu)
       ELSE
          WRITE(*,*) 'ERROR: Visc zero'
          WRITE(*,*) 'STOP!'
@@ -1011,5 +1189,39 @@ CONTAINS
       
     END FUNCTION u_ex_bl
     !===================
+
+    !=====================================
+    FUNCTION u_ex_pure_diff(x,y) RESULT(f)
+    !=====================================
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: x
+      REAL(KIND=8), INTENT(IN) :: y
+      
+      REAL(KIND=8) :: f
+      !--------------------------------------------
+      
+      f = (SINH(Pi*x)*SIN(Pi*y) + SINH(Pi*y)*SIN(Pi*x)) / SINH(Pi)
+
+     END FUNCTION u_ex_pure_diff
+     !==========================
+
+     !=======================================
+     FUNCTION grad_pure_diff(x, y) RESULT(GG)
+     !=======================================
+   
+       IMPLICIT NONE
+   
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+            
+       REAL(KIND=8), DIMENSION(2) :: GG
+       !--------------------------------
+      
+       GG(1) = (COSH(Pi*x)*Pi*SIN(Pi*y) + SINH(Pi*y)*COS(Pi*x)*Pi) / SINH(Pi)
+       GG(2) = (SINH(Pi*x)*COS(Pi*y)*Pi + COSH(Pi*y)*Pi*SIN(Pi*x)) / SINH(Pi)
+
+     END FUNCTION grad_pure_diff
+     !==========================
 
 END MODULE models

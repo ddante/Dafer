@@ -2,11 +2,13 @@ MODULE Post_pro
 
   USE Element_Class
 
-  USE init_problem,  ONLY : pb_name, order, pb_type, visc
+  USE init_problem,  ONLY : pb_name, order, pb_type, visc, is_visc
 
   USE geometry,      ONLY : N_dim, N_elements, N_dofs, elements
 
-  USE models,        ONLY : exact_solution
+  USE models,        ONLY : exact_solution, exact_grad
+
+  USE Gradient_Reconstruction
 
   USE Quadrature_rules,  ONLY : Int_d
 
@@ -237,6 +239,7 @@ CONTAINS
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: err_ele
       
       REAL(KIND=8) :: err_L2, err_Loo, int_uex
+      REAL(KIND=8) :: err_Gx_L2, err_Gy_L2
 
       INTEGER :: je, i, ierror, UNIT
       !---------------------------------------------
@@ -278,11 +281,21 @@ CONTAINS
       ! Normalize L2 error
       err_L2 = SQRT(err_L2) / SQRT(int_uex)
 
+      ! Error of the gradients
+      IF( is_visc ) THEN
+         CALL compute_gradient_error(uu, err_Gx_L2, err_Gy_L2)
+      ENDIF        
+
       WRITE(*,*) ' *** COMPUTE THE ERROR ***'
             
       WRITE(*,*) 'N. dof, err L2, err_Loo'
       WRITE(*,22) N_dofs, err_L2, err_Loo
-      
+
+      IF( is_visc ) THEN
+         WRITE(*,*) 'L2 error of the gradients: E_G_x, E_G_y'
+         WRITE(*,23) err_Gx_L2, err_Gy_L2
+      ENDIF
+
       UNIT = 9
       
       OPEN(UNIT, FILE = 'error.'//TRIM(ADJUSTL(pb_name)), &
@@ -294,16 +307,91 @@ CONTAINS
       
          STOP
       ENDIF
-      
+
       WRITE(UNIT, *) 'N. dof, err L2, err_Loo'
       WRITE(UNIT,22)  N_dofs, err_L2, err_Loo
+
+      IF( is_visc ) THEN
+         WRITE(UNIT, *) 'L2 error of the gradients: E_G_x, E_G_y'
+         WRITE(UNIT,23)  err_Gx_L2, err_Gy_L2
+      ENDIF
 
       CLOSE(UNIT)
       
 22 FORMAT(I6, 2(1x,e24.16))
-
+23 FORMAT(2(1x,e24.16))
       
     END SUBROUTINE compute_error
-    !===========================    
+    !===========================
+
+    !==========================================================
+    SUBROUTINE compute_gradient_error(uu, err_Gx_L2, err_Gy_L2)
+    !==========================================================
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), DIMENSION(:), INTENT(IN)  :: uu
+      REAL(KIND=8),               INTENT(OUT) :: err_Gx_L2
+      REAL(KIND=8),               INTENT(OUT) :: err_Gy_L2
+      !-------------------------------------------------
+
+      REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: D_uu
+
+      REAL(KIND=8), DIMENSION(2) :: D_u_ex
+
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: err2_x, err2_y 
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: d2_x, d2_y
+
+      INTEGER :: je, k, i
+
+      REAL(KIND=8) :: int_d2_x, int_d2_y
+      !---------------------------------------------
+
+      err_Gx_L2 = 0.d0;  err_Gy_L2 = 0.d0
+      int_d2_x = 0.d0;   int_d2_y = 0.d0
+
+      ALLOCATE( D_uu(2, SIZE(uu)) )
+
+      D_uu = Compute_gradient(uu)
+
+      DO je = 1, N_elements
+
+         ALLOCATE( err2_x(elements(je)%p%N_points), &
+                   err2_y(elements(je)%p%N_points), &
+                     d2_x(elements(je)%p%N_points), &
+                     d2_y(elements(je)%p%N_points) )
+
+         DO k = 1, elements(je)%p%N_points
+
+            D_u_ex = exact_grad(pb_type, &
+                                elements(je)%p%coords(:, k), &
+                                visc )         
+
+            err2_x(k) = ( D_uu(1, elements(je)%p%NU(k)) - D_u_ex(1) )**2
+            err2_y(k) = ( D_uu(2, elements(je)%p%NU(k)) - D_u_ex(2) )**2
+
+            d2_x(k) = D_u_ex(1)**2
+            d2_y(k) = D_u_ex(2)**2
+
+         ENDDO
+
+         err_Gx_L2 = err_Gx_L2 + Int_d(elements(je)%p, err2_x)
+         err_Gy_L2 = err_Gy_L2 + Int_d(elements(je)%p, err2_y)
+
+         int_d2_x = int_d2_x + Int_d(elements(je)%p, d2_x)
+         int_d2_y = int_d2_y + Int_d(elements(je)%p, d2_y)
+
+         DEALLOCATE(  err2_x, err2_y, d2_x, d2_y )
+
+      ENDDO
+    
+      err_Gx_L2 = DSQRT(err_Gx_L2)/DSQRT(int_d2_x)
+      err_Gy_L2 = DSQRT(err_Gy_L2)/DSQRT(int_d2_y)
+
+      DEALLOCATE( D_uu )
+
+    END SUBROUTINE compute_gradient_error
+    !====================================    
+   
 
 END MODULE Post_pro

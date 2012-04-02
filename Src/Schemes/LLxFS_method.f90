@@ -67,12 +67,12 @@ CONTAINS
     !-----------
     ! LxF Scheme
     !----------------------------------------
-    Phi_i = Phi_tot/REAL(Ns) !+ alpha*(u - u_m)
+    Phi_i = Phi_tot/REAL(Ns) + alpha*(u - u_m)
 
     !---------
     ! Limiting
     !------------------------
-!    Phi_i = limitation(Phi_i)
+    Phi_i = limitation(Phi_i)
 
     !--------------
     ! Stabilization
@@ -154,7 +154,7 @@ CONTAINS
     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_k
     REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
 
-    REAL(KIND=8) :: D_muD_u_q
+    REAL(KIND=8) :: D_muD_u_q,  xi_Re, Re_h
     REAL(KIND=8) :: tau, Stab_D_u, Stab_D_phi
     
     INTEGER :: iq, i, k, id, N_s, N_v 
@@ -200,6 +200,10 @@ CONTAINS
     tau = tau + ( REAL(N_v) * visc / ele%volume )
           
     tau = 1.d0 / tau
+
+!    Re_h = local_Pe(ele, u)
+!    xi_Re = MAX(0.d0, 1.d0 - 1.d0/Re_h)
+!    tau = tau * xi_Re
 
     !-------------------
     ! Stabilization term
@@ -540,5 +544,64 @@ CONTAINS
 
   END FUNCTION CIP_stabilization2
   !=============================
+
+
+  !=====================================
+  FUNCTION Local_Pe(ele, u) RESULT(l_Pe)
+  !=====================================
+
+    IMPLICIT NONE
+
+    TYPE(element),              INTENT(IN) :: ele
+    REAL(KIND=8), DIMENSION(:), INTENT(IN) :: u
+
+    REAL(KIND=8) :: l_Pe
+    !---------------------------------------------
+
+    REAL(KIND=8) :: x_i, y_i, h, p
+
+    REAL(KIND=8), DIMENSION(N_dim) :: a, gg, xx
+
+    INTEGER :: N_v, i, j
+
+    REAL(KIND=8), PARAMETER ::  Pi = DACOS(-1.d0)
+    !-------------------------------------------------
+
+    N_v = ele%N_verts
+
+    h = 0.d0
+
+    DO j = 1, N_dim
+       gg(j) = SUM(ele%coords(j, 1:N_v)) / REAL(N_v)
+    ENDDO    
+
+    DO i = 1, N_v
+
+       x_i = ele%coords(1, i)
+       y_i = ele%coords(2, i)
+
+       xx = (/ x_i, y_i /)
+
+       h = h + SUM( (xx - gg)**2 )
+
+       a = advection_speed(pb_type, u(i), x_i, y_i)
+       
+    ENDDO
+
+!!$    h =  ele%Volume / SQRT(N_v * h)
+
+    P = 0.d0
+    DO i = 1, ele%N_faces
+       P = P + SUM(ele%faces(i)%f%w_q)
+    ENDDO
+    
+    h = ele%Volume/P
+
+    h = h*(2.d0*(2.d0 + SQRT(2.d0)))
+
+    l_Pe = SQRT(SUM(a*a)) * h / visc
+
+  END FUNCTION Local_Pe
+  !====================
 
 END MODULE LLxFS_method

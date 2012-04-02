@@ -27,29 +27,39 @@ CONTAINS
     REAL(KIND=8), DIMENSION(:),   INTENT(OUT) :: Phi_i
     REAL(KIND=8),                 INTENT(OUT) :: inv_dt
     !--------------------------------------------------
-    INTEGER :: Ns, j, iq, i
+    INTEGER :: Ns, j, iq, i, id, k
 
     REAL(KIND=8) :: u_m, x_m, y_m, s_i, s_q, &
                     N_m, mod_am, T_par, K_plus
 
     REAL(KIND=8), DIMENSION(N_dim) :: a_m, int_G_i, a_i, a_q
 
+    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: D_muD_phi_q
+
     REAL(KIND=8), DIMENSION(SIZE(Phi_i)) :: K_i, beta_i, &
                                             omega_i
 
-    REAL(KIND=8) :: alpha, tau, Lr, Tr, Re_l, l_min, l_max
+    REAL(KIND=8) :: alpha, tau, Lr, Tr, Re_h
+    REAL(KIND=8) :: Re_l, l_min, l_max, xi_Re
     !---------------------------------------------------
 
     REAL(KIND=8), DIMENSION(:),     POINTER :: w
     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_q
+    REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_k
     REAL(KIND=8), DIMENSION(:,:),   POINTER :: phi_q
 
     REAL(KIND=8), DIMENSION(N_dim) :: D_u_q, &
                                       Dr_u_q
+
+    REAL(KIND=8) :: D_muD_u_q
+
+    REAL(KIND=8), PARAMETER :: PI_g = DACOS(-1.d0)
     !--------------------------------------------------
 
     Ns = ele%N_points
-    
+
+    ALLOCATE( D_muD_phi_q(Ns) )
+
     !-----------
     ! Mean state
     !-------------------------------------------------
@@ -62,13 +72,11 @@ CONTAINS
 
     Lr = reference_length(a_m, visc)
 
-    Tr = Lr / ( SQRT( SUM(a_m**2) ) + (visc/Lr) )
+    Tr = Lr / ( SQRT( SUM(a_m**2) ) + (visc/Lr) )   
 
     Re_l = SQRT( SUM(a_m**2) ) * Lr / visc
 
-    alpha = 1.0d0
-
-    tau = alpha * Tr
+    Re_h = local_Pe(ele, u)
     
     !-----------
     ! LW wcheme
@@ -80,52 +88,59 @@ CONTAINS
        K_i(j) = 0.5d0 * DOT_PRODUCT(a_m, ele%rd_n(:, j))
 
        l_max = MAX( l_max, SQRT( SUM(ele%rd_n(:, j)**2)) )
-
        l_min = MIN( l_min, SQRT( SUM(ele%rd_n(:, j)**2)) )
 
-      !K_plus = K_plus + MAX( K_i(j), 0.d0 )
-       K_plus = K_plus + ABS( K_i(j) )
+       K_plus = K_plus + MAX( K_i(j), 0.d0 )
        
     ENDDO
 
-    K_i    = K_i    / ele%volume
-    K_plus = K_plus / ele%volume
+    xi_Re = MAX(0.d0, 1.d0 - 1.d0/Re_h)
+    !xi_Re = MIN(1.d0, Re_h)
+    !--------------------------------------------------
 
-    mod_am = SQRT( SUM( a_m**2 ) )
-
-!   T_par = 0.25d0 * ele%volume / MAXVAL(ABS(K_i))
-!   T_par = 0.5d0 * ele%volume / K_plus
-    T_par = 2.d0 / ( K_plus * ele%N_verts )
+    IF( SQRT(SUM(a_m**2)) /= 0.d0 ) THEN
+       T_par = xi_Re * (0.5d0 * ele%volume / K_plus)
+    ELSE
+       T_par = 0.d0
+    ENDIF
 
     omega_i = 1.d0/REAL(Ns, 8)
-
-!!$    DO i = 1, Ns
-!!$
-!!$       int_G_i = int_d_G(ele, i)
-!!$
-!!$       beta_i(i) = omega_i(i) + &
-!!$                   omega_i(i) * DOT_PRODUCT(a_m, int_G_i) / K_plus
-!!$
-!!$    !   beta_i(i) = omega_i(i) + &
-!!$    !              (T_par / ele%volume) * DOT_PRODUCT(a_m, int_G_i)
-!!$                 
-!!$    ENDDO
-!!$    
-!!$    phi_i = beta_i * Phi_tot
-
+   
     phi_i = omega_i * Phi_tot
 
           w => ele%w_q
     D_phi_q => ele%D_phi_q
+    D_phi_k => ele%D_phi_k
       phi_q => ele%phi_q
 
 
     DO iq = 1, ele%N_quad
 
+       !------------------------
+       ! Div( mu * Grad(Phi_i) )
+       !-----------------------------------------------
+       D_muD_phi_q = 0.d0       
+       DO i = 1, Ns
+
+          DO id = 1, N_dim
+
+             DO k = 1, Ns
+                D_muD_phi_q(i) = D_muD_phi_q(i) +         &
+                                 visc*D_phi_k(id, i, k) * &
+                                 D_phi_q(id, k, iq)
+
+             ENDDO
+
+          ENDDO
+
+       ENDDO     
+       !-------------------------------------------------
+
        Dr_u_q = 0.d0 ! Reconstructed gradient      
         D_u_q = 0.d0 ! Continuous gradient
           a_q = 0.d0 
           s_q = 0.d0
+    D_muD_u_q = 0.d0
 
        DO i = 1, Ns
 
@@ -144,63 +159,32 @@ CONTAINS
 
           s_q = s_q + phi_q(i, iq) * s_i
 
+          D_muD_u_q = D_muD_u_q + D_muD_phi_q(i) * u(i)
+
        ENDDO
 
        DO i = 1, Ns
 
-          !----------------
-          ! Advective part
+          !-------------------------
+          ! Advective/Diffusive part
           !--------------------------------------------------------
           phi_i(i) = phi_i(i) + &
-                     T_par * ( DOT_PRODUCT(a_q, D_u_q) - s_q ) * &
-                     DOT_PRODUCT(a_q, D_phi_q(:, i, iq)) * w(iq)
+                     T_par *  DOT_PRODUCT(a_q, D_phi_q(:, i, iq)) * &
+                            ( DOT_PRODUCT(a_q, D_u_q) - D_muD_u_q - s_q ) * w(iq)
 
           !--------------
           ! Viscous part
           !--------------------------------------------------------
           IF(is_visc) THEN
              
-             phi_i(i) = phi_i(i) + &
+             phi_i(i) = phi_i(i) + (1.d0 - xi_Re)*&
                         visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
 
           ENDIF
-
+ 
        ENDDO
 
     ENDDO
-
-
-!!$    !--------------
-!!$    ! Viscous part
-!!$    !--------------------------------------------------------
-!!$    IF(is_visc) THEN
-!!$
-!!$              w => ele%w_q
-!!$        D_phi_q => ele%D_phi_q
-!!$          phi_q => ele%phi_q
-!!$
-!!$       DO iq = 1, ele%N_quad
-!!$
-!!$          Dr_u_q = 0.d0 ! Reconstructed gradient
-!!$           D_u_q = 0.d0 ! Continuous gradient
-!!$
-!!$          DO i = 1, Ns
-!!$
-!!$             Dr_u_q = Dr_u_q + phi_q(i, iq) * D_u(:, i)
-!!$              D_u_q = D_u_q  + D_phi_q(:, i, iq) * u(i)
-!!$
-!!$          ENDDO
-!!$
-!!$          DO i = 1, Ns
-!!$
-!!$             phi_i(i) = phi_i(i) + &
-!!$                        visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
-!!$
-!!$          ENDDO
-!!$
-!!$       ENDDO
-!!$
-!!$    ENDIF
 
     ! Time step
     !--------------
@@ -208,14 +192,18 @@ CONTAINS
 
     DO j = 1, Ns
 
-       inv_dt = MAX( inv_dt, &
-                     DOT_PRODUCT(a_m, ele%rd_n(:, j)) * (1.d0 + 1.d0/Re_l) )
+       !inv_dt = MAX( inv_dt, &
+       !           DOT_PRODUCT(a_m, ele%rd_n(:, j)) * (1.d0 + 1.d0/Re_l) )
+
+       inv_dt = MAX(inv_dt, DOT_PRODUCT(a_m, ele%rd_n(:, j)) + visc/Lr)
 
     ENDDO
 
     inv_dt = 2.d0 * inv_dt
 
-    NULLIFY( w, D_phi_q, phi_q )
+    NULLIFY( w, D_phi_q, phi_q, D_phi_k )
+
+    DEALLOCATE( D_muD_phi_q )
 
   END SUBROUTINE LW_scheme
   !=======================
@@ -249,9 +237,11 @@ CONTAINS
   END FUNCTION reference_length
   !============================  
 
-  !==============================================
+
+
+  !===============================================
   FUNCTION CIP_stabilization2(ele, u) RESULT(Stab)
-  !==============================================
+  !===============================================
 
     IMPLICIT NONE
 
@@ -286,7 +276,7 @@ CONTAINS
 
     Stab = 0.d0
 
-    g_1 = 0.05
+    g_1 = 0.001
 
     ALLOCATE ( a(N_dim, ele%N_points) )
     DO i = 1, ele%N_points
@@ -374,6 +364,54 @@ CONTAINS
     DEALLOCATE ( a )
 
   END FUNCTION CIP_stabilization2
-  !=============================
+  !==============================
+
+  !=====================================
+  FUNCTION Local_Pe(ele, u) RESULT(l_Pe)
+  !=====================================
+
+    IMPLICIT NONE
+
+    TYPE(element),              INTENT(IN) :: ele
+    REAL(KIND=8), DIMENSION(:), INTENT(IN) :: u
+
+    REAL(KIND=8) :: l_Pe
+    !---------------------------------------------
+
+    REAL(KIND=8) :: x_m, y_m, u_m, P, h
+
+    REAL(KIND=8), DIMENSION(2) :: a_m
+
+    INTEGER :: Ns, i
+    !-------------------------------------------------
+
+    Ns = ele%N_points
+
+    u_m = SUM(u) / REAL(Ns)
+
+    x_m = SUM(ele%Coords(1, :)) / REAL(Ns)
+    y_m = SUM(ele%Coords(2, :)) / REAL(Ns)
+
+    a_m = advection_speed(pb_type, u_m, x_m, y_m)
+
+    P = 0.d0
+    DO i = 1, ele%N_faces
+       P = P + SUM(ele%faces(i)%f%w_q)
+    ENDDO
+    
+    h = 2.d0*ele%Volume/P
+
+    !!h = h*(2.d0*(2.d0 + SQRT(2.d0)))
+
+    IF(is_visc) THEN
+       l_Pe = SQRT(SUM(a_m*a_m)) * h / visc
+    ELSE
+       l_Pe = HUGE(1.d0)
+    ENDIF
+
+    l_Pe = MAX( l_Pe, 1.0E-12 )
+    
+  END FUNCTION Local_Pe
+  !====================
 
 END MODULE LW_method

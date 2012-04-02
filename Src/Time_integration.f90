@@ -12,7 +12,7 @@ MODULE time_integration
 
   REAL(KIND=8) :: res_0
   
-  PUBLIC :: time_advance, Nodal_Pe
+  PUBLIC :: time_advance, Nodal_Pe, ClearAll
 
 CONTAINS
   
@@ -132,5 +132,18 @@ CONTAINS
 
   END FUNCTION Nodal_Pe  
   !====================
+
+  !====================
+  SUBROUTINE ClearAll()
+  !====================
+
+    IMPLICIT NONE
+
+    IF( ALLOCATED(elements) ) DEALLOCATE(elements)
+
+    CALL ClearGradients()
+
+  END SUBROUTINE ClearAll  
+  !======================
 
 END MODULE time_integration

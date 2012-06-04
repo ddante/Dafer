@@ -1,7 +1,8 @@
 MODULE Gradient_Reconstruction
 
   USE Element_class  
-  USE geometry,       ONLY: N_dim, N_elements, elements, N_dofs
+  USE geometry,       ONLY: N_dim, N_elements, elements, N_dofs, inv_A
+
   USE Quadrature_rules
 
   USE init_problem, ONLY: order, pb_type, visc
@@ -19,7 +20,7 @@ MODULE Gradient_Reconstruction
 #include "finclude/petscpc.h"
 
   !===================
-  Mat  :: MM_LSQ
+  Mat  :: MM_LL
   KSP  :: ksp
   PC   :: pc
   Vec  :: rhs_x, rhs_y
@@ -28,11 +29,13 @@ MODULE Gradient_Reconstruction
   LOGICAL :: is_factorized = .FALSE.
 
   !=========================================== 
-  INTEGER, PARAMETER :: RESERVED     = 0, &
-                        GREEN_GAUSS  = 1, &
-                        LEAST_SQUARE = 2
+  INTEGER, PARAMETER :: RESERVED      = 0, &
+                        GREEN_GAUSS   = 1, &
+                        L2_PROJECTION = 2, &
+                        LEAST_SQUARE  = 3
+                        
   !===========================================
-  integer :: type_reconstruction = 1
+  integer :: type_reconstruction = 3
 
   PRIVATE
   PUBLIC :: Compute_gradient, DestroyPETSc
@@ -56,9 +59,13 @@ CONTAINS
 
        D_uu = GreenGauss_gradient(uu)
 
+    CASE( L2_PROJECTION )
+
+       D_uu = L2projection_gradient(uu)
+              
     CASE( LEAST_SQUARE )
 
-       D_uu = LeastSquare_gradient(uu)
+       D_uu = LSQ_gradient(uu)
 
     CASE DEFAULT
 
@@ -148,55 +155,86 @@ CONTAINS
   END FUNCTION GreenGauss_Gradient
   !===============================
 
-  
-!!$  !=================================
-!!$  SUBROUTINE Face_Average_Gradient()
-!!$  !=================================
-!!$
-!!$    IMPLICIT NONE
-!!$
-!!$    TYPE(element) :: ele    
-!!$    
-!!$    REAL(KIND=8), DIMENSION(N_dim) :: Mean_grad_u
-!!$
-!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_1_q
-!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_2_q
-!!$
-!!$    INTEGER :: je, if, iq
-!!$    !-------------------------------------------------
-!!$
-!!$    DO je = 1, N_elements
-!!$
-!!$       ele = elements(je)%p
-!!$
-!!$       DO if = 1, ele%N_faces
-!!$
-!!$          N_quad   => ele%faces(if)%f%N_quad
-!!$          p_Du_1_q => ele%faces(if)%f%p_Du_1_q
-!!$          p_Du_2_q => ele%faces(if)%f%p_Du_2_q
-!!$          
-!!$          DO iq = 1, N_quad
-!!$
-!!$             Mean_grad_u = 0.5d0 * &
-!!$                          ( p_Du_1_q(:, iq) + p_Du_2_q(:, iq) )
-!!$
-!!$             !ele%faces(i_f)%f%G_u(:, iq) = Mean_grad_u
-!!$
-!!$          ENDDO
-!!$          
-!!$
-!!$       ENDDO
-!!$
-!!$       NULLIFY( N_quad, p_Du_1_q, p_Du_2_q ) 
-!!$
-!!$    ENDDO
-!!$    
-!!$  END SUBROUTINE Face_Average_Gradient
-!!$  !===================================  
+  !=====================================
+  FUNCTION LSQ_Gradient(uu) RESULT(D_uu)
+  !=====================================
 
-  !=============================================
-  FUNCTION LeastSquare_gradient(uu) RESULT(D_uu)
-  !=============================================
+    IMPLICIT NONE
+
+    REAL(KIND=8), DIMENSION(:), INTENT(IN) :: uu
+
+    REAL(KIND=8), DIMENSION(N_dim, SIZE(uu)) :: D_uu
+    !-------------------------------------------
+
+    TYPE(element) :: ele
+
+    TYPE :: vector
+       REAL(KIND=8), DIMENSION(2) :: v
+    END TYPE vector
+    TYPE(vector), DIMENSION(:), ALLOCATABLE :: b
+
+    INTEGER, DIMENSION(:), ALLOCATABLE :: Nu
+    !-------------------------------------------
+
+    REAL(KIND=8) :: x_i, y_i, x_k, y_k, u_i, u_k
+
+    INTEGER :: je, i, k, jf, N1, N2
+    !-------------------------------------------
+
+    ALLOCATE( b(N_dofs) )
+    DO i = 1, N_dofs
+       b(i)%v = 0.d0
+    ENDDO
+
+    DO je = 1, N_elements
+
+       ele = elements(je)%p
+
+       ALLOCATE( NU(ele%N_points) )
+
+       Nu = ele%NU
+            
+       DO jf = 1, ele%N_faces  
+
+          N1 = Nu(ele%faces(jf)%f%l_nu(1))
+          N2 = Nu(ele%faces(jf)%f%l_nu(2))         
+
+          x_i = ele%Coords(1, ele%faces(jf)%f%l_nu(1))
+          y_i = ele%Coords(2, ele%faces(jf)%f%l_nu(1))
+          
+          x_k = ele%Coords(1, ele%faces(jf)%f%l_nu(2))
+          y_k = ele%Coords(2, ele%faces(jf)%f%l_nu(2))
+
+          u_i = uu(N1)
+          u_k = uu(N2)
+
+          ! b --> i
+          b(N1)%v(1) = b(N1)%v(1) + 2.d0*(x_k - x_i)*(u_k - u_i)
+          b(N1)%v(2) = b(N1)%v(2) + 2.d0*(y_k - y_i)*(u_k - u_i)
+
+          ! b --> k
+          b(N2)%v(1) = b(N2)%v(1) + 2.d0*(x_i - x_k)*(u_i - u_k)
+          b(N2)%v(2) = b(N2)%v(2) + 2.d0*(y_i - y_k)*(u_i - u_k)
+
+          
+       ENDDO
+
+       DEALLOCATE(Nu)
+
+    ENDDO
+
+    DO i = 1, N_dofs      
+       D_uu(:, i) = MATMUL(inv_A(i)%MM, b(i)%v)
+    ENDDO
+
+    DEALLOCATE( b )
+
+  END FUNCTION LSQ_Gradient
+  !========================  
+
+  !==============================================
+  FUNCTION L2projection_gradient(uu) RESULT(D_uu)
+  !==============================================
 
     IMPLICIT NONE
 
@@ -223,7 +261,7 @@ CONTAINS
 
     IF( .NOT. is_factorized ) THEN
 
-       CALL Assembly_LSQMatrix()
+       CALL Assembly_MASSMatrix()
        
        is_factorized = .TRUE.
 
@@ -283,14 +321,14 @@ CONTAINS
     CALL VecSet(rhs_x, zero, ierr)
     CALL VecSet(rhs_y, zero, ierr)    
 
-  END FUNCTION LeastSquare_gradient
-  !================================
+  END FUNCTION L2projection_gradient  
+  !=================================
 
-  !==============================
-  SUBROUTINE Assembly_LSQMatrix()
-  !==============================
+  !===============================
+  SUBROUTINE Assembly_MassMatrix()
+  !===============================
   !
-  ! Mass Matrix of the LSQ reconstruction.
+  ! Mass Matrix of the L2 projection.
   ! To be construced and factorized once for all
   !
     IMPLICIT NONE
@@ -313,9 +351,9 @@ CONTAINS
     nz = 9*(order-1)
 
     CALL MatCreateSeqAIJ(PETSC_COMM_WORLD, N_dofs,N_dofs, &
-                         nz, PETSC_NULL_INTEGER, MM_LSQ, ierr)
+                         nz, PETSC_NULL_INTEGER, MM_LL, ierr)
 
-    CALL MatSetFromOptions(MM_LSQ, ierr)
+    CALL MatSetFromOptions(MM_LL, ierr)
 
     DO je = 1, N_elements
 
@@ -339,17 +377,17 @@ CONTAINS
        rows = ele%NU - 1
        cols = ele%NU - 1
 
-       CALL MatSetValues(MM_LSQ, N_s,rows, N_s,cols, M_ij, ADD_VALUES, ierr)
+       CALL MatSetValues(MM_LL, N_s,rows, N_s,cols, M_ij, ADD_VALUES, ierr)
 
        DEALLOCATE( M_ij, rows, cols )
 
     ENDDO
 
-    CALL MatAssemblyBegin(MM_LSQ, MAT_FINAL_ASSEMBLY, ierr)
-    CALL MatAssemblyEnd(  MM_LSQ, MAT_FINAL_ASSEMBLY, ierr)
+    CALL MatAssemblyBegin(MM_LL, MAT_FINAL_ASSEMBLY, ierr)
+    CALL MatAssemblyEnd(  MM_LL, MAT_FINAL_ASSEMBLY, ierr)
 
     CALL KSPCreate(PETSC_COMM_WORLD, ksp, ierr)
-    CALL KSPSetOperators(ksp, MM_LSQ, MM_LSQ, SAME_PRECONDITIONER, ierr)
+    CALL KSPSetOperators(ksp, MM_LL, MM_LL, SAME_PRECONDITIONER, ierr)
     
     CALL KSPGetPC(ksp, pc, ierr)
     CALL PCSetType(pc, PCLU, ierr)
@@ -365,8 +403,8 @@ CONTAINS
     CALL VecDuplicate(rhs_x, rhs_y, ierr)
     CALL VecDuplicate(rhs_x, sol,   ierr)
 
-  END SUBROUTINE Assembly_LSQMatrix
-  !================================
+  END SUBROUTINE Assembly_MassMatrix
+  !=================================
 
   !========================
   SUBROUTINE DestroyPETSc()
@@ -379,7 +417,7 @@ CONTAINS
 
     IF( is_factorized ) THEN
 
-       CALL MatDestroy(MM_LSQ, ierr)
+       CALL MatDestroy(MM_LL, ierr)
 
        CALL VecDestroy(rhs_x, ierr)
        CALL VecDestroy(rhs_y, ierr)

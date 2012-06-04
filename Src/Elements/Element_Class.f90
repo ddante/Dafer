@@ -15,7 +15,11 @@ MODULE Element_Class
   TYPE :: faces_ptr     
      CLASS(face), POINTER :: f     
   END TYPE faces_ptr
-       
+
+  !-------------------------------------------
+  !TYPE b_e_con_str, defined in face_class
+  !-------------------------------------------
+
   !==================================
   TYPE, PUBLIC :: element
 
@@ -42,6 +46,13 @@ MODULE Element_Class
      ! NU(j), j = 1, N_points
      INTEGER,      DIMENSION(:),   POINTER :: NU
      !-------------------------------------------------
+     !
+     ! Connectivity between the node and the elements
+     ! which share the same node
+     ! b_e_con(j)%je, j = 1, N_points, je = 1, # ele(bubble)
+     TYPE(b_e_con_str), DIMENSION(:), POINTER :: b_e_con
+     !-------------------------------------------------
+     !
      ! Normals for the RD scheme
      ! rd_n(id, j), id = 1, N_dim, j = 1, N_points
      !-------------------------------------------------

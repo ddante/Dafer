@@ -23,7 +23,7 @@ PROGRAM main
   !------------------------------------------------
 
   !--------------------
-  !Read the imput files
+  !Read the input files
   !------------------------------------------------  
   IF (command_argument_count() < 2) THEN
       WRITE(*,*) 'ERROR: No file param and/or mesh.'
@@ -59,20 +59,20 @@ PROGRAM main
   !----------------
   ! Solution update
   !-----------------------------------------------
-  DO 
-
-     CALL time_advance(ite, uu, rhs, res)
-    
-     IF (ite >= ite_max .OR. res < toll_res) EXIT
- 
-     ite = ite + 1
-
-     IF( MOD(ite, 10000) == 0.0 ) THEN
-        CALL plot_procedure(uu)
-        CALL compute_error(uu)
-     ENDIF
- 
-  ENDDO
+!!$  DO 
+!!$
+!!$     CALL time_advance(ite, uu, rhs, res)
+!!$    
+!!$     IF (ite >= ite_max .OR. res < toll_res) EXIT
+!!$ 
+!!$     ite = ite + 1
+!!$
+!!$     IF( MOD(ite, 10000) == 0.0 ) THEN
+!!$        CALL plot_procedure(uu)
+!!$        CALL compute_error(uu)
+!!$     ENDIF
+!!$ 
+!!$  ENDDO
  
   !----------------
   ! Post-processing

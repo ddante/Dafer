@@ -279,7 +279,7 @@ CONTAINS
       ENDDO
 
       ! Normalize L2 error
-      err_L2 = SQRT(err_L2) / SQRT(int_uex)
+      err_L2 = DSQRT(err_L2) / DSQRT(int_uex)
 
       ! Error of the gradients
       IF( is_visc ) THEN

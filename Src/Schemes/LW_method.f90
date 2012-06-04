@@ -51,7 +51,7 @@ CONTAINS
     REAL(KIND=8), DIMENSION(N_dim) :: D_u_q, &
                                       Dr_u_q
 
-    REAL(KIND=8) :: D_muD_u_q
+    REAL(KIND=8) :: D_muD_u_q,  D_muDr_u_q
 
     REAL(KIND=8), PARAMETER :: PI_g = DACOS(-1.d0)
     !--------------------------------------------------
@@ -83,7 +83,7 @@ CONTAINS
     !-------------------------------------------------
     l_max = 0.0; l_min = HUGE(1.d0); K_plus = 0.0
 
-    DO j = 1, ele%N_verts !Ns
+    DO j = 1, Ns !ele%N_verts
 
        K_i(j) = 0.5d0 * DOT_PRODUCT(a_m, ele%rd_n(:, j))
 
@@ -141,6 +141,7 @@ CONTAINS
           a_q = 0.d0 
           s_q = 0.d0
     D_muD_u_q = 0.d0
+   D_muDr_u_q = 0.d0
 
        DO i = 1, Ns
 
@@ -161,6 +162,9 @@ CONTAINS
 
           D_muD_u_q = D_muD_u_q + D_muD_phi_q(i) * u(i)
 
+          D_muDr_u_q = D_muDr_u_q + D_phi_q(1, i, iq) * visc*D_u(1, i) + &
+                                    D_phi_q(2, i, iq) * visc*D_u(2, i)
+
        ENDDO
 
        DO i = 1, Ns
@@ -171,6 +175,10 @@ CONTAINS
           phi_i(i) = phi_i(i) + &
                      T_par *  DOT_PRODUCT(a_q, D_phi_q(:, i, iq)) * &
                             ( DOT_PRODUCT(a_q, D_u_q) - D_muD_u_q - s_q ) * w(iq)
+
+!!$          phi_i(i) = phi_i(i) + &
+!!$                     T_par *  DOT_PRODUCT(a_q, D_phi_q(:, i, iq)) * &
+!!$                            ( DOT_PRODUCT(a_q, D_u_q) - D_muDr_u_q - s_q ) * w(iq)
 
           !--------------
           ! Viscous part

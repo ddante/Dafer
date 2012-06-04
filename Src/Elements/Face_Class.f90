@@ -7,6 +7,12 @@ MODULE Face_Class
   INTEGER, PARAMETER :: SEG_P2 = 2
   !==================================
 
+  !-------------------------------------------
+  TYPE :: b_e_con_str
+     INTEGER, DIMENSION(:), POINTER :: cn_ele
+  END TYPE b_e_con_str
+  !-------------------------------------------
+
   !==================================
   TYPE, PUBLIC :: face
      

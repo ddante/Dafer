@@ -16,7 +16,7 @@ CONTAINS
   !==========================================================
   SUBROUTINE LLxFS_scheme(ele, Phi_tot, u, D_u, Phi_i, alpha)
   !==========================================================
-
+    
     IMPLICIT NONE
 
     TYPE(element),                INTENT(IN)  :: ele
@@ -201,9 +201,9 @@ CONTAINS
           
     tau = 1.d0 / tau
 
-!    Re_h = local_Pe(ele, u)
-!    xi_Re = MAX(0.d0, 1.d0 - 1.d0/Re_h)
-!    tau = tau * xi_Re
+!!$    Re_h = local_Pe(ele, u)
+!!$    xi_Re = MAX(0.d0, 1.d0 - 1.d0/Re_h)
+!!$    tau = tau * xi_Re
 
     !-------------------
     ! Stabilization term

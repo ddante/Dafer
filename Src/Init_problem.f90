@@ -56,6 +56,8 @@ CONTAINS
 
       CALL strong_bc(pb_type, visc, uu, rhs)
 
+uu = Init_with_ExactSol()
+
       ! Delete a possible previous convergence history...
       UNIT = 4
       

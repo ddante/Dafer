@@ -2,6 +2,7 @@ MODULE geometry
 
   USE Trianlge_Class
   USE Quadrangle_Class
+  USE Lin_Algebra
   
   IMPLICIT NONE
   PRIVATE
@@ -19,8 +20,12 @@ MODULE geometry
      CLASS(element), POINTER :: p
   END type elements_ptr
   TYPE(elements_ptr), DIMENSION(:), ALLOCATABLE :: elements
-
   !----------------------------------------------------------
+
+  TYPE :: matrix
+     REAL(KIND=8), DIMENSION(2,2) :: MM
+  END TYPE matrix
+  TYPE(matrix), DIMENSION(:), ALLOCATABLE :: inv_A
 
   INTEGER, DIMENSION(:,:), ALLOCATABLE :: edge_ele
   !==========================================================
@@ -42,7 +47,7 @@ MODULE geometry
   !==========================================================
 
   PUBLIC :: read_gmshMesh, read_MeshFBx, Init_Elements
-  PUBLIC :: N_dim, N_dofs, N_elements, elements
+  PUBLIC :: N_dim, N_dofs, N_elements, elements, inv_A
   !==========================================================
 
 CONTAINS
@@ -64,7 +69,7 @@ CONTAINS
 
     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q 
 
-    INTEGER :: Nv, i, j, jq, jt, is1, is2, istat
+    INTEGER :: Nv, i, j, k, jq, jt, is1, is2, istat
     !-----------------------------------------------------
 
     jq = 0
@@ -81,11 +86,11 @@ CONTAINS
        N_elements = N_ele_mesh
 
        ALLOCATE( elements(N_elements) )
-       
+
        DO jt = 1, N_elements
 
           Nv = SIZE(ele(jt)%verts(:))
-
+          
           SELECT CASE(Nv)
 
           !--------------------
@@ -98,7 +103,7 @@ CONTAINS
              ENDIF
              CALL tri%initialize( "element", ele(jt)%verts,     &
                                   rr_nodes(:, ele(jt)%verts),   &
-                                  ele(jt)%NU_seg, ele(jt)%n_ele )
+                                  ele(jt)%NU_seg, ele(jt)%n_ele)
 
              elements(jt)%p => tri
 
@@ -208,7 +213,7 @@ CONTAINS
              DEALLOCATE( VV, RR )
 
           END SELECT
-          
+
        ENDDO       
 
     END SELECT
@@ -219,6 +224,8 @@ CONTAINS
     CALL loc2loc_connectivity()
 
     DEALLOCATE( ele, edge_ele, rr_nodes )
+   
+    CALL Build_LSQ_Matrix
     
   END SUBROUTINE Init_Elements
   !===========================
@@ -715,10 +722,83 @@ CONTAINS
          ENDDO 
 
       ENDDO
+
+      DEALLOCATE(cn)
  
   END SUBROUTINE find_segments
   !===========================
 
+  !============================
+  SUBROUTINE Build_LSQ_Matrix()
+  !============================
+
+    IMPLICIT NONE
+
+    TYPE(element) :: ele
+
+    TYPE(matrix), DIMENSION(:), ALLOCATABLE :: A
+    INTEGER, DIMENSION(:), ALLOCATABLE :: Nu
+
+    REAL(KIND=8) :: x_i, y_i, x_k, y_k
+
+    INTEGER :: je, i, k, jf, N1, N2
+    !----------------------------------------
+
+    ALLOCATE( A(N_nodes) )
+    DO i = 1, N_nodes
+       A(i)%MM = 0.d0
+    ENDDO
+
+    DO je = 1, N_elements
+
+       ele = elements(je)%p
+
+       ALLOCATE( NU(ele%N_points) )
+
+       Nu = ele%NU
+
+       DO jf = 1, ele%N_faces          
+
+          N1 = Nu(ele%faces(jf)%f%l_nu(1))
+          N2 = Nu(ele%faces(jf)%f%l_nu(2))         
+
+          x_i = ele%Coords(1, ele%faces(jf)%f%l_nu(1))
+          y_i = ele%Coords(2, ele%faces(jf)%f%l_nu(1))
+          
+          x_k = ele%Coords(1, ele%faces(jf)%f%l_nu(2))
+          y_k = ele%Coords(2, ele%faces(jf)%f%l_nu(2))
+
+          ! A --> N1
+          A(N1)%MM(1,1) = A(N1)%MM(1,1) + 2.d0*(x_k - x_i)**2
+          A(N1)%MM(2,2) = A(N1)%MM(2,2) + 2.d0*(y_k - y_i)**2
+          A(N1)%MM(1,2) = A(N1)%MM(1,2) + 2.d0*(x_k - x_i)*(y_k - y_i)
+          A(N1)%MM(2,1) = A(N1)%MM(2,1) + 2.d0*(x_k - x_i)*(y_k - y_i)
+
+          ! A --> N2
+          A(N2)%MM(1,1) = A(N2)%MM(1,1) + 2.d0*(x_i - x_k)**2
+          A(N2)%MM(2,2) = A(N2)%MM(2,2) + 2.d0*(y_i - y_k)**2
+          A(N2)%MM(1,2) = A(N2)%MM(1,2) + 2.d0*(x_i - x_k)*(y_i - y_k)
+          A(N2)%MM(2,1) = A(N2)%MM(2,1) + 2.d0*(x_i - x_k)*(y_i - y_k)
+          
+       ENDDO
+
+       DEALLOCATE(Nu)
+
+    ENDDO
+
+    ALLOCATE( inv_A(N_nodes) )
+
+    DO i = 1, N_nodes
+
+       inv_A(i)%MM = inverse( A(i)%MM )
+
+    ENDDO
+
+    DEALLOCATE( A )
+
+  END SUBROUTINE Build_LSQ_Matrix
+  !==============================  
+  
   !========================================
   SUBROUTINE read_gmshMesh(unit, mesh_file)
   !========================================

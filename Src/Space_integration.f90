@@ -8,15 +8,14 @@ MODULE space_integration
                             with_source, CFL
 
   USE models,         ONLY: advection_flux, diffusion_flux, &
-                            advection_speed, strong_bc, source_term
+                            advection_speed, strong_bc, source_term, &
+                            exact_grad
 
   USE Num_scheme
 
   USE Gradient_Reconstruction
 
   USE Quadrature_rules, ONLY: oInt_n, Int_d
-
-use test_gradient
 
   IMPLICIT NONE
 
@@ -53,8 +52,10 @@ CONTAINS
     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q
 
     REAL(KIND=8), DIMENSION(N_dim) :: p_Du_1_q, p_Du_2_q
-    
-    INTEGER :: Ns, je, i_f, k, iq, n_ele, istat
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: Du_e
+  
+    INTEGER :: Ns, je, i_f, k, iq, n_ele, istat,  i
     !----------------------------------------------
 
     rhs = 0.d0
@@ -80,15 +81,6 @@ CONTAINS
 
        u1 = uu(Nu);  D_u1 = D_uu(:, Nu)
 
-       !-------------------------------
-       ! Compute the total fluctuation
-       !------------------------------------------------------
-       IF( is_visc ) THEN
-          Phi_tot = total_residual(loc_ele, u1, D_u1)
-       ELSE          
-          Phi_tot = total_residual(loc_ele, u1)
-       ENDIF
-       
        !--------------------------
        ! Update the face gradients
        !------------------------------------------------------
@@ -150,6 +142,15 @@ CONTAINS
        ENDDO
        !------------------------------------------------------
 
+       !-------------------------------
+       ! Compute the total fluctuation
+       !------------------------------------------------------
+       IF( is_visc ) THEN
+          Phi_tot = total_residual(loc_ele, u1, D_u1)
+       ELSE          
+          Phi_tot = total_residual(loc_ele, u1)
+       ENDIF
+       
        !---------------------------
        ! Distribute the fluctuation
        !------------------------------------------------------------
@@ -288,7 +289,8 @@ CONTAINS
                    DOT_PRODUCT( p_Du_2_q(:, iq), -n_m(:, iq) )
 
           Phi_v = Phi_v +  w(iq) * &
-                   visc * ( DOT_PRODUCT(G_mean, n_m(:, iq)) ) 
+                   visc * ( DOT_PRODUCT(G_mean, n_m(:, iq)) - &
+                            G_jump ) 
 
        ENDDO
 

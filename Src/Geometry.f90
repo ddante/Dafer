@@ -23,9 +23,9 @@ MODULE geometry
   !----------------------------------------------------------
 
   TYPE :: matrix
-     REAL(KIND=8), DIMENSION(2,2) :: MM
+     REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: MM
   END TYPE matrix
-  TYPE(matrix), DIMENSION(:), ALLOCATABLE :: inv_A
+  TYPE(matrix), DIMENSION(:), ALLOCATABLE :: inv_A, A_t
 
   INTEGER, DIMENSION(:,:), ALLOCATABLE :: edge_ele
   !==========================================================
@@ -47,7 +47,7 @@ MODULE geometry
   !==========================================================
 
   PUBLIC :: read_gmshMesh, read_MeshFBx, Init_Elements
-  PUBLIC :: N_dim, N_dofs, N_elements, elements, inv_A
+  PUBLIC :: N_dim, N_dofs, N_elements, elements, inv_A, A_t
   !==========================================================
 
 CONTAINS
@@ -68,6 +68,8 @@ CONTAINS
     REAL(KIND=8), DIMENSION(:, :), ALLOCATABLE :: RR
 
     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: p_Dphi_2_q 
+
+    LOGICAL, DIMENSION(:), ALLOCATABLE :: face_seen
 
     INTEGER :: Nv, i, j, k, jq, jt, is1, is2, istat
     !-----------------------------------------------------
@@ -216,6 +218,102 @@ CONTAINS
 
        ENDDO       
 
+    !==========================================================
+    CASE(4)
+    !==========================================================
+
+       N_dofs     = N_nodes + 2*N_seg       
+       N_elements = N_ele_mesh    
+
+       ALLOCATE( elements(N_elements) )
+       
+       ALLOCATE( face_seen(N_seg) )
+       face_seen = .FALSE.
+
+       DO jt = 1, N_elements
+
+          Nv = SIZE(ele(jt)%verts(:))
+
+          SELECT CASE(Nv)
+
+          !--------------------
+          CASE(3) ! TRIANGLE P3
+          !----------------------------------------------------
+
+             jq = jq + 1
+
+             ALLOCATE( VV(10), RR(N_dim, 10) )
+
+             VV(1:3) = ele(jt)%verts(:)
+             
+             IF( .NOT. face_seen(ele(jt)%NU_seg(3)) ) THEN             
+                VV(4) = ele(jt)%NU_seg(3) + N_nodes
+                VV(5) = ele(jt)%NU_seg(3) + N_nodes + N_seg
+                face_seen(ele(jt)%NU_seg(3)) = .TRUE.
+             ELSE
+                VV(4) = ele(jt)%NU_seg(3) + N_nodes + N_seg
+                VV(5) = ele(jt)%NU_seg(3) + N_nodes
+             ENDIF
+
+             IF( .NOT. face_seen(ele(jt)%NU_seg(1)) ) THEN             
+                VV(6) = ele(jt)%NU_seg(1) + N_nodes
+                VV(7) = ele(jt)%NU_seg(1) + N_nodes + N_seg
+                face_seen(ele(jt)%NU_seg(1)) = .TRUE.         
+             ELSE
+                VV(6) = ele(jt)%NU_seg(1) + N_nodes + N_seg
+                VV(7) = ele(jt)%NU_seg(1) + N_nodes
+             ENDIF
+
+             IF( .NOT. face_seen(ele(jt)%NU_seg(2)) ) THEN             
+                VV(8) = ele(jt)%NU_seg(2) + N_nodes
+                VV(9) = ele(jt)%NU_seg(2) + N_nodes + N_seg
+                face_seen(ele(jt)%NU_seg(2)) = .TRUE.         
+             ELSE
+                VV(8) = ele(jt)%NU_seg(2) + N_nodes + N_seg
+                VV(9) = ele(jt)%NU_seg(2) + N_nodes
+             ENDIF
+
+             VV(10) = N_dofs + jq
+
+             DO i = 1, Nv
+
+                RR(:, i) = rr_nodes(:, ele(jt)%verts(i))
+
+                j = MOD(i, MIN(i+1, Nv)) + 1
+
+                is1 = ele(jt)%verts(i) 
+                is2 = ele(jt)%verts(j) 
+
+                RR(:, Nv+2*i-1) = rr_nodes(:, is1)*(2.d0/3.d0) + rr_nodes(:, is2)/3.d0
+                RR(:, Nv+2*i)   = rr_nodes(:, is1)/3.d0        + rr_nodes(:, is2)*(2.d0/3.d0)
+
+             ENDDO
+
+             RR(1, 10) = SUM(rr_nodes(1, ele(jt)%verts))/REAL(Nv, 8)
+             RR(2, 10) = SUM(rr_nodes(2, ele(jt)%verts))/REAL(Nv, 8)
+
+             ALLOCATE(tri, STAT=istat)
+             IF(istat /=0) THEN
+                WRITE(*,*) 'ERROR: failed trianlge allocation'
+             ENDIF
+             CALL tri%initialize( "element", VV, RR,            &
+                                  ele(jt)%NU_seg, ele(jt)%n_ele )
+
+             elements(jt)%p => tri
+
+             DEALLOCATE( VV, RR )
+       
+          CASE DEFAULT
+
+             WRITE(*,*) 'ERROR: O(4) element non implemented'
+             STOP
+ 
+          END SELECT
+
+       END DO
+
+       DEALLOCATE( face_seen )
+       
     END SELECT
 
     N_dofs = N_dofs + jq
@@ -224,8 +322,14 @@ CONTAINS
     CALL loc2loc_connectivity()
 
     DEALLOCATE( ele, edge_ele, rr_nodes )
-   
-    CALL Build_LSQ_Matrix
+
+    SELECT CASE(Order)
+    CASE(2)
+!       CALL Build_LSQ_Matrix_O2
+       CALL Build_SPR_Matrix()
+    CASE(3)
+       CALL Build_LSQ_Matrix_O3
+    END SELECT
     
   END SUBROUTINE Init_Elements
   !===========================
@@ -282,11 +386,14 @@ CONTAINS
                 ! points
                 DO iq = 1, elements(n_ele)%p%faces(i)%f%N_quad
 
-                   IF( SUM( elements(n_ele)%p%faces(i)%f%xx_q(:, iq) - &
-                               elements(jt)%p%faces(j)%f%xx_q(:, jq) ) == 0.d0 ) EXIT
+!!$                   IF( SUM( elements(n_ele)%p%faces(i)%f%xx_q(:, iq) - &
+!!$                               elements(jt)%p%faces(j)%f%xx_q(:, jq) ) == 0.d0 ) EXIT
+
+                 IF( ABS( SUM( elements(n_ele)%p%faces(i)%f%xx_q(:, iq) - &
+                               elements(jt)%p%faces(j)%f%xx_q(:, jq) ) ) <= 1.0E-14 ) EXIT
 
                 ENDDO
-                             
+
                 elements(jt)%p%faces(j)%f%p_Dphi_2_q(:,:, jq) = p_Dphi_2_q(:,:, iq)
 
              ENDDO             
@@ -728,9 +835,9 @@ CONTAINS
   END SUBROUTINE find_segments
   !===========================
 
-  !============================
-  SUBROUTINE Build_LSQ_Matrix()
-  !============================
+  !===============================
+  SUBROUTINE Build_LSQ_Matrix_O2()
+  !===============================
 
     IMPLICIT NONE
 
@@ -739,13 +846,14 @@ CONTAINS
     TYPE(matrix), DIMENSION(:), ALLOCATABLE :: A
     INTEGER, DIMENSION(:), ALLOCATABLE :: Nu
 
-    REAL(KIND=8) :: x_i, y_i, x_k, y_k
+    REAL(KIND=8) :: x_i, y_i, x_k, y_k, w_ik
 
-    INTEGER :: je, i, k, jf, N1, N2
+    INTEGER :: je, i, k, Ni, Nk
     !----------------------------------------
 
-    ALLOCATE( A(N_nodes) )
-    DO i = 1, N_nodes
+    ALLOCATE( A(N_dofs) )
+    DO i = 1, N_dofs
+       ALLOCATE( A(i)%MM(2,2) )
        A(i)%MM = 0.d0
     ENDDO
 
@@ -757,38 +865,49 @@ CONTAINS
 
        Nu = ele%NU
 
-       DO jf = 1, ele%N_faces          
-
-          N1 = Nu(ele%faces(jf)%f%l_nu(1))
-          N2 = Nu(ele%faces(jf)%f%l_nu(2))         
-
-          x_i = ele%Coords(1, ele%faces(jf)%f%l_nu(1))
-          y_i = ele%Coords(2, ele%faces(jf)%f%l_nu(1))
+       DO i = 1, ele%N_points
           
-          x_k = ele%Coords(1, ele%faces(jf)%f%l_nu(2))
-          y_k = ele%Coords(2, ele%faces(jf)%f%l_nu(2))
+          Ni = Nu(i)
 
-          ! A --> N1
-          A(N1)%MM(1,1) = A(N1)%MM(1,1) + 2.d0*(x_k - x_i)**2
-          A(N1)%MM(2,2) = A(N1)%MM(2,2) + 2.d0*(y_k - y_i)**2
-          A(N1)%MM(1,2) = A(N1)%MM(1,2) + 2.d0*(x_k - x_i)*(y_k - y_i)
-          A(N1)%MM(2,1) = A(N1)%MM(2,1) + 2.d0*(x_k - x_i)*(y_k - y_i)
+          DO k = i, ele%N_points
 
-          ! A --> N2
-          A(N2)%MM(1,1) = A(N2)%MM(1,1) + 2.d0*(x_i - x_k)**2
-          A(N2)%MM(2,2) = A(N2)%MM(2,2) + 2.d0*(y_i - y_k)**2
-          A(N2)%MM(1,2) = A(N2)%MM(1,2) + 2.d0*(x_i - x_k)*(y_i - y_k)
-          A(N2)%MM(2,1) = A(N2)%MM(2,1) + 2.d0*(x_i - x_k)*(y_i - y_k)
+             Nk = Nu(k)
+
+             IF( k == i ) CYCLE
+
+             x_i = ele%Coords(1, i)
+             y_i = ele%Coords(2, i)
           
+             x_k = ele%Coords(1, k)
+             y_k = ele%Coords(2, k)
+
+             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+
+             ! A --> Ni
+             A(Ni)%MM(1,1) = A(Ni)%MM(1,1) + 2.d0*w_ik*(x_k - x_i)**2
+             A(Ni)%MM(2,2) = A(Ni)%MM(2,2) + 2.d0*w_ik*(y_k - y_i)**2
+             A(Ni)%MM(1,2) = A(Ni)%MM(1,2) + 2.d0*w_ik*(x_k - x_i)*(y_k - y_i)
+             A(Ni)%MM(2,1) = A(Ni)%MM(1,2)
+
+             ! A --> Nk
+             A(Nk)%MM(1,1) = A(Nk)%MM(1,1) + 2.d0*w_ik*(x_i - x_k)**2
+             A(Nk)%MM(2,2) = A(Nk)%MM(2,2) + 2.d0*w_ik*(y_i - y_k)**2
+             A(Nk)%MM(1,2) = A(Nk)%MM(1,2) + 2.d0*w_ik*(x_i - x_k)*(y_i - y_k)
+             A(Nk)%MM(2,1) = A(Nk)%MM(1,2)
+
+          ENDDO
+
        ENDDO
-
+       
        DEALLOCATE(Nu)
 
     ENDDO
 
-    ALLOCATE( inv_A(N_nodes) )
+    ALLOCATE( inv_A(N_dofs) )
 
-    DO i = 1, N_nodes
+    DO i = 1, N_dofs
+         
+       ALLOCATE( inv_A(i)%MM(2,2) )
 
        inv_A(i)%MM = inverse( A(i)%MM )
 
@@ -796,7 +915,288 @@ CONTAINS
 
     DEALLOCATE( A )
 
-  END SUBROUTINE Build_LSQ_Matrix
+  END SUBROUTINE Build_LSQ_Matrix_O2
+  !=================================
+
+  !===============================
+  SUBROUTINE Build_LSQ_Matrix_O3()
+  !===============================
+
+    IMPLICIT NONE
+
+    TYPE(element) :: ele
+
+    TYPE(matrix), DIMENSION(:), ALLOCATABLE :: A
+
+    INTEGER, DIMENSION(:), ALLOCATABLE :: Nu
+
+    REAL(KIND=8) :: x_i, y_i, x_k, y_k, w_ik
+
+    INTEGER :: je, i, k, l, jf, Ni, Nk
+    !----------------------------------------
+
+    ALLOCATE( A(N_dofs) )
+    DO i = 1, N_dofs
+       ALLOCATE( A(i)%MM(5,5) )
+       A(i)%MM = 0.d0
+    ENDDO
+
+    DO je = 1, N_elements
+
+       ele = elements(je)%p
+
+       ALLOCATE( NU(ele%N_points) )
+
+       Nu = ele%NU
+
+       DO i = 1, ele%N_points
+
+          Ni = Nu(i)
+
+          DO k = i, ele%N_points
+            
+             IF( k == i ) CYCLE
+
+             Nk = Nu(k)
+
+             x_i = ele%Coords(1, i)
+             y_i = ele%Coords(2, i)
+          
+             x_k = ele%Coords(1, k)
+             y_k = ele%Coords(2, k)
+
+             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+
+             ! A --> Ni
+             A(Ni)%MM(1,1) = A(Ni)%MM(1,1) +  2.d0*w_ik*(x_k - x_i)**2
+             A(Ni)%MM(2,2) = A(Ni)%MM(2,2) +  2.d0*w_ik*(y_k - y_i)**2
+             A(Ni)%MM(3,3) = A(Ni)%MM(3,3) + 0.5d0*w_ik*(x_k - x_i)**4
+             A(Ni)%MM(4,4) = A(Ni)%MM(4,4) + 0.5d0*w_ik*(y_k - y_i)**4
+             A(Ni)%MM(5,5) = A(Ni)%MM(5,5) + 2.d0*w_ik*((x_k - x_i)**2)* &
+                                                       ((y_k - y_i)**2)
+
+             ! ---
+                
+             A(Ni)%MM(1,2) = A(Ni)%MM(1,2) +  2.d0*w_ik*(x_k - x_i)*&
+                                                         (y_k - y_i)
+             A(Ni)%MM(1,3) = A(Ni)%MM(1,3) +        w_ik*(x_k - x_i)**3
+             A(Ni)%MM(1,4) = A(Ni)%MM(1,4) +        w_ik*(x_k - x_i)*&
+                                                         (y_k - y_i)**2
+             A(Ni)%MM(1,5) = A(Ni)%MM(1,5) + 2.d0*w_ik*((x_k - x_i)**2)*&
+                                                        (y_k - y_i)
+
+             ! ---
+
+             A(Ni)%MM(2,1) = A(Ni)%MM(1,2) 
+             A(Ni)%MM(2,3) = A(Ni)%MM(2,3) +     w_ik*((x_k - x_i)**2)*&
+                                                       (y_k - y_i)
+             A(Ni)%MM(2,4) = A(Ni)%MM(2,4) +     w_ik* (y_k - y_i)**3
+             A(Ni)%MM(2,5) = A(Ni)%MM(2,5) + 2.d0*w_ik*(x_k - x_i)*&
+                                                       (y_k - y_i)**2
+
+             ! ---
+
+             A(Ni)%MM(3,1) = A(Ni)%MM(1,3)
+             A(Ni)%MM(3,2) = A(Ni)%MM(2,3)
+             A(Ni)%MM(3,4) = A(Ni)%MM(3,4) + 0.5d0*w_ik*((x_k - x_i)**2)*&
+                                                        ((y_k - y_i)**2)
+             A(Ni)%MM(3,5) = A(Ni)%MM(3,5) +       w_ik*((x_k - x_i)**3)*&
+                                                        ((y_k - y_i))
+
+             ! ---
+
+             A(Ni)%MM(4,1) = A(Ni)%MM(1,4)
+             A(Ni)%MM(4,2) = A(Ni)%MM(2,4)
+             A(Ni)%MM(4,3) = A(Ni)%MM(3,4)          
+             A(Ni)%MM(4,5) = A(Ni)%MM(4,5) +       w_ik*((x_k - x_i))*&
+                                                        ((y_k - y_i)**3)
+
+             A(Ni)%MM(5,1) = A(Ni)%MM(1,5)
+             A(Ni)%MM(5,2) = A(Ni)%MM(2,5)
+             A(Ni)%MM(5,3) = A(Ni)%MM(3,5)
+             A(Ni)%MM(5,4) = A(Ni)%MM(4,5)
+
+
+             ! A --> Nk
+             A(Nk)%MM(1,1) = A(Nk)%MM(1,1) +  2.d0*w_ik*(x_i - x_k)**2
+             A(Nk)%MM(2,2) = A(Nk)%MM(2,2) +  2.d0*w_ik*(y_i - y_k)**2
+             A(Nk)%MM(3,3) = A(Nk)%MM(3,3) + 0.5d0*w_ik*(x_i - x_k)**4
+             A(Nk)%MM(4,4) = A(Nk)%MM(4,4) + 0.5d0*w_ik*(y_i - y_k)**4
+             A(Nk)%MM(5,5) = A(Nk)%MM(5,5) + 2.d0*w_ik*((x_i - x_k)**2)* &
+                                                       ((y_i - y_k)**2)
+
+             ! ---
+                
+             A(Nk)%MM(1,2) = A(Nk)%MM(1,2) + 2.d0*w_ik*(x_i - x_k)*&
+                                                       (y_i - y_k)
+             A(Nk)%MM(1,3) = A(Nk)%MM(1,3) +      w_ik*(x_i - x_k)**3
+             A(Nk)%MM(1,4) = A(Nk)%MM(1,4) +      w_ik*(x_i - x_k)*&
+                                                       (y_i - y_k)**2
+             A(Nk)%MM(1,5) = A(Nk)%MM(1,5) + 2.d0*w_ik*((x_i - x_k)**2)*&
+                                                        (y_i - y_k)
+
+             ! ---
+
+             A(Nk)%MM(2,1) = A(Nk)%MM(1,2) 
+             A(Nk)%MM(2,3) = A(Nk)%MM(2,3) +     w_ik*((x_i - x_k)**2)*&
+                                                       (y_i - y_k)
+             A(Nk)%MM(2,4) = A(Nk)%MM(2,4) +      w_ik*(y_i - y_k)**3
+             A(Nk)%MM(2,5) = A(Nk)%MM(2,5) + 2.d0*w_ik*(x_i - x_k)*&
+                                                       (y_i - y_k)**2
+
+             ! ---
+
+             A(Nk)%MM(3,1) = A(Nk)%MM(1,3)
+             A(Nk)%MM(3,2) = A(Nk)%MM(2,3)
+             A(Nk)%MM(3,4) = A(Nk)%MM(3,4) + 0.5d0*w_ik*((x_i - x_k)**2)*&
+                                                        ((y_i - y_k)**2)
+             A(Nk)%MM(3,5) = A(Nk)%MM(3,5) +       w_ik*((x_i - x_k)**3)*&
+                                                        ((y_i - y_k))
+
+             ! ---
+
+             A(Nk)%MM(4,1) = A(Nk)%MM(1,4)
+             A(Nk)%MM(4,2) = A(Nk)%MM(2,4)
+             A(Nk)%MM(4,3) = A(Nk)%MM(3,4)          
+             A(Nk)%MM(4,5) = A(Nk)%MM(4,5) +       w_ik*((x_i - x_k))*&
+                                                        ((y_i - y_k)**3)
+
+             A(Nk)%MM(5,1) = A(Nk)%MM(1,5)
+             A(Nk)%MM(5,2) = A(Nk)%MM(2,5)
+             A(Nk)%MM(5,3) = A(Nk)%MM(3,5)
+             A(Nk)%MM(5,4) = A(Nk)%MM(4,5)
+             
+          ENDDO
+
+       ENDDO
+
+       DEALLOCATE(Nu)
+
+    ENDDO
+
+    ALLOCATE( inv_A(N_dofs) )
+
+    DO i = 1, N_dofs
+
+       ALLOCATE( inv_A(i)%MM(5,5) )
+
+       inv_A(i)%MM = inverse_LU( A(i)%MM ) 
+
+    ENDDO
+
+    DEALLOCATE( A )
+
+  END SUBROUTINE Build_LSQ_Matrix_O3
+  !=================================
+
+  !============================
+  SUBROUTINE Build_SPR_Matrix()
+  !============================
+  !
+  ! Construct the matrix "A" for the
+  ! superconvergent patch recovery scheme ZZ
+  !
+    IMPLICIT NONE
+
+    TYPE(element) :: ele
+  
+    INTEGER, DIMENSION(:), ALLOCATABLE :: NN_A
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: AA_tr
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: AA
+
+    REAL(KIND=8) :: x_i, y_i, x_k, y_k, w_ik
+
+    REAL(KIND=8) :: xi, eta
+
+    INTEGER :: je, i, k, j, n_r, n_c, Nu
+    !----------------------------------------
+
+    ALLOCATE( NN_A(N_dofs) )
+    NN_A = 0
+    
+    ! # of elements belonging to bubble 
+    ! of the node i
+    DO je = 1, N_elements
+
+       ele = elements(je)%p
+
+       DO i = 1, ele%N_points
+          NN_A(ele%NU(i)) = NN_A(ele%NU(i)) + 1
+       ENDDO
+
+    ENDDO
+
+    ALLOCATE( A_t(N_dofs) )
+
+    ! Size(A):
+    ! (#recovery points * #element of the bubble) x
+    ! #coeff. of the polynomial expansion
+    DO i = 1, N_dofs
+       ALLOCATE( A_t(i)%MM(NN_A(i), 3) )
+       A_t(i)%MM = 0.d0
+    ENDDO
+
+    DO je = 1, N_elements
+
+       ele = elements(je)%p
+
+       DO i = 1, ele%N_points
+
+          Nu = ele%NU(i)
+          
+          ! Local reference system, centered
+          ! in the node i
+          xi  = ele%xx_q(1, 1) - ele%coords(1, i)
+          eta = ele%xx_q(2, 1) - ele%coords(2, i)
+
+          DO k = 1, SIZE(A_t(Nu)%MM, 1)
+             IF(A_t(Nu)%MM(k, 1) == 0) THEN
+                A_t(Nu)%MM(k, :) = (/ 1.d0, xi, eta /) ! Linear
+                EXIT
+             ENDIF
+          ENDDO
+
+       ENDDO
+
+    ENDDO
+    
+    DEALLOCATE( NN_A )
+
+    ALLOCATE( inv_A(N_dofs) )
+
+    DO i = 1, N_dofs
+
+       n_r = SIZE(A_t(i)%MM, 1)
+       n_c = SIZE(A_t(i)%MM, 2)
+
+       ALLOCATE( AA_Tr(n_c, n_r), &
+                    AA(n_c, n_c) )
+
+       AA_tr = TRANSPOSE(A_t(i)%MM)
+
+       AA = MATMUL(AA_tr, A_t(i)%MM)
+
+       ALLOCATE( inv_A(i)%MM(n_c, n_c) )
+
+       inv_A(i)%MM = 0.d0
+
+       ! Exclude the boundary points
+       ! for which the matrix is singular
+       ! or ill-conditioned
+       IF(SIZE(AA_tr, 2) > 3) THEN
+          inv_A(i)%MM = inverse_LU( AA )
+       ENDIF
+
+       DEALLOCATE( A_t(i)%MM )
+       ALLOCATE( A_t(i)%MM(n_c, n_r) )
+       A_t(i)%MM = AA_tr
+
+       DEALLOCATE( AA_tr, AA )
+
+    ENDDO
+
+  END SUBROUTINE Build_SPR_Matrix
   !==============================  
   
   !========================================

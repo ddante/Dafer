@@ -3,7 +3,8 @@ MODULE Lin_Algebra
   IMPLICIT NONE
   PRIVATE
 
-  PUBLIC :: Cross_Product, inverse, determinant
+  PUBLIC :: Cross_Product, inverse, &
+            determinant, inverse_LU
 
 CONTAINS
 
@@ -150,5 +151,73 @@ CONTAINS
 
    END FUNCTION determinant 
    !=======================
+
+!!$   !=================================
+!!$   FUNCTION Transpose(A) RESULT(A_tr)
+!!$   !=================================
+!!$
+!!$     IMPLICIT NONE
+!!$
+!!$     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: A
+!!$
+!!$     REAL(KIND=8), DIMENSION(SIZE(A,2),SIZE(A,1)) :: A_tr
+!!$
+!!$     INTEGER :: i, k
+!!$     !-----------------------------------
+!!$
+!!$     DO i = 1, SIZE(A, 1)
+!!$        DO k = 1, SIZE(A, 2)
+!!$           A_tr(k, i) = A(i, k)
+!!$        ENDDO
+!!$     ENDDO            
+!!$
+!!$   END FUNCTION Transpose
+!!$   !=====================
+
+   !===================================
+   FUNCTION Inverse_LU(A) RESULT(Inv_A)
+   !===================================
+
+   ! Returns the inverse of a matrix calculated by finding the LU
+   ! decomposition.  Depends on LAPACK.
+
+     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: A
+
+     REAL(KIND=8), DIMENSION(SIZE(A,1),SIZE(A,2)) :: Inv_A
+
+     REAL(KIND=8), DIMENSION(SIZE(A,1)) :: work  ! WORK ARRAY FOR LAPACK
+     INTEGER,      DIMENSION(SIZE(A,1)) :: ipiv  ! PIVOT INDICES
+
+     INTEGER :: n, info
+     !---------------------------------------
+
+     ! External procedures defined in LAPACK
+     EXTERNAL DGETRF
+     EXTERNAL DGETRI
+
+     ! Store A in inv_A to prevent it from being overwritten by LAPACK
+     Inv_A = A
+     n = SIZE(A,1)
+
+     ! DGETRF computes an LU factorization of a general M-by-N matrix A
+     ! using partial pivoting with row interchanges.
+     CALL DGETRF(n, n, inv_A, n, ipiv, info)
+
+     IF(info /= 0) THEN
+        WRITE(*,*) 'Matrix is numerically singular!'
+        STOP
+     ENDIF
+
+     ! DGETRI computes the inverse of a matrix using the LU factorization
+     ! computed by DGETRF.
+     CALL DGETRI(n, inv_A, n, ipiv, work, n, info)
+
+     IF(info /= 0) THEN
+        WRITE(*,*) 'Matrix inversion failed!'
+        STOP
+     ENDIF
+
+   END FUNCTION inverse_LU
+   !======================
 
 END MODULE Lin_Algebra

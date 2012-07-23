@@ -7,7 +7,8 @@ MODULE Element_Class
   !==================================  
   INTEGER, PARAMETER :: TRI_P1 = 10
   INTEGER, PARAMETER :: TRI_P2 = 11
-  
+  INTEGER, PARAMETER :: TRI_P3 = 12
+
   INTEGER, PARAMETER :: QUA_Q1 = 20
   INTEGER, PARAMETER :: QUA_Q2 = 21
   !==================================

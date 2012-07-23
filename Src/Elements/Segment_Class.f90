@@ -24,16 +24,19 @@ MODULE Segment_Class
   PRIVATE :: face_quadrature_sub
   PRIVATE :: init_quadrature_SEG_P1
   PRIVATE :: init_quadrature_SEG_P2
+  PRIVATE :: init_quadrature_SEG_P3
 
   PRIVATE :: normal
   
   PRIVATE :: basis_function
   PRIVATE :: basis_function_SEG_P1
   PRIVATE :: basis_function_SEG_P2
+  PRIVATE :: basis_function_SEG_P3
 
   PRIVATE :: gradient_ref
   PRIVATE :: gradient_ref_SEG_P1
-  PRIVATE :: gradient_ref_SEG_P2
+  PRIVATE :: gradient_ref_SEG_P2 
+  PRIVATE :: gradient_ref_SEG_P3
 
 CONTAINS
 
@@ -67,6 +70,12 @@ CONTAINS
        e%Type     = SEG_P2
        e%N_verts  = 2
        e%N_points = 3
+
+    CASE(4)
+
+       e%Type     = SEG_P3
+       e%N_verts  = 2
+       e%N_points = 4
 
      CASE DEFAULT
 
@@ -130,11 +139,15 @@ CONTAINS
     CASE(SEG_P2)
 
        CALL init_quadrature_SEG_P2(e, p_D_phi)
-       
+
+    CASE(SEG_P3)
+
+       CALL init_quadrature_SEG_P3(e, p_D_phi)
+
     CASE DEFAULT
 
        WRITE(*,*) 'Unknown Segment type for quadrature'
-       WRITE(*,*) 'STOP'
+       STOP
 
     END SELECT
 
@@ -210,11 +223,15 @@ CONTAINS
     CASE(SEG_P2)
 
        psi_i = basis_function_SEG_P2(e, i, xi)
-       
+
+    CASE(SEG_P3)
+
+       psi_i = basis_function_SEG_P3(e, i, xi)
+
     CASE DEFAULT
 
        WRITE(*,*) 'Unknown Segment type for basis functions'
-       WRITE(*,*) 'STOP'
+       STOP
 
     END SELECT
 
@@ -243,11 +260,15 @@ CONTAINS
     CASE(SEG_P2)
 
        D_psi_i = gradient_ref_SEG_P2(e, i, xi)
-       
+
+    CASE(SEG_P3)
+
+       D_psi_i = gradient_ref_SEG_P3(e, i, xi)
+
     CASE DEFAULT
 
        WRITE(*,*) 'Unknown Segment type for gradients'
-       WRITE(*,*) 'STOP'
+       STOP
 
     END SELECT
 
@@ -410,7 +431,7 @@ CONTAINS
     !-----------------------------
 
     e%p_Dphi_1_q = 0.d0
-    e%p_Dphi_2_q = 0.d0
+    !e%p_Dphi_2_q = 0.d0
 
     e%xx_q = 0.d0
     
@@ -537,11 +558,146 @@ CONTAINS
     !-----------------------------------------------
 
     e%p_Dphi_1_q = 0.d0
-    e%p_Dphi_2_q = 0.d0
+    !e%p_Dphi_2_q = 0.d0
 
     e%xx_q = 0.d0
     
   END SUBROUTINE init_quadrature_SEG_P2
+  !====================================
+ 
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%%     SEGMENT P3     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+  !=====================================================
+  FUNCTION basis_function_SEG_P3(e, i, xi) RESULT(psi_i)
+  !=====================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: psi_i
+    !------------------------------
+
+    SELECT CASE(i)
+
+    CASE(1)
+
+       psi_i = -(9.d0/2.d0)*xi**3 + 9.d0*xi**2 - (11.d0/2.d0)*xi + 1.d0
+
+    CASE(2)
+
+       psi_i = (9.d0/2.d0)*xi**3 - (9.d0/2.d0)*xi**2 + xi
+
+    CASE(3)
+
+       psi_i = (27.d0/2.d0)*xi**3 - (45.d0/2.d0)*xi**2 + 9*xi
+
+    CASE(4)
+
+       psi_i = (-27.d0/2.d0)*xi**3 + 18.d0*xi**2 - (9.d0/2.d0)*xi
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: not supported Dof in Segment baisis function'
+       STOP
+
+    END SELECT    
+
+  END FUNCTION basis_function_SEG_P3
+  !=================================
+
+  !=====================================================
+  FUNCTION gradient_ref_SEG_P3(e, i, xi) RESULT(D_psi_i)
+  !=====================================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)            :: e
+    INTEGER,       INTENT(IN) :: i
+    REAL(KIND=8),  INTENT(IN) :: xi
+
+    REAL(KIND=8) :: D_psi_i
+    !------------------------------
+
+    SELECT CASE(i)
+
+    CASE(1)
+
+       D_psi_i = (-27.d0/2.d0)*xi**2 + 18.d0*xi - (11.d0/2.d0)
+
+    CASE(2)
+
+       D_psi_i = (27.d0/2.d0)*xi**2 - 9.d0*xi + 1.d0
+
+    CASE(3)
+
+       D_psi_i = (81.d0/2.d0)*xi**2 - 45.d0*xi + 9.d0
+
+    CASE(4)
+
+       D_psi_i = (-81.d0/2.d0)*xi**2 + 36.d0*xi - (9.d0/2.d0)
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: not supported Dof in Segment gradient'
+       STOP
+
+    END SELECT    
+
+  END FUNCTION gradient_ref_SEG_P3
+  !================================  
+
+  !============================================
+  SUBROUTINE init_quadrature_SEG_P3(e, p_D_phi)
+  !============================================
+
+    IMPLICIT NONE
+
+    CLASS(segment)                             :: e
+    REAL(KIND=8), DIMENSION(:,:,:), INTENT(IN) :: p_D_phi
+    !----------------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: x_q
+    REAL(KIND=8) :: Jac
+    INTEGER :: j, k, l
+    !----------------------------------------------------
+
+    e%N_quad = 4
+
+    ALLOCATE(   e%n_q(e%N_dim,    e%N_quad) )
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 1) )
+    
+    ALLOCATE( e%p_Dphi_1_q(e%N_dim, SIZE(p_D_phi,3), e%N_quad) )
+    ALLOCATE( e%p_Du_1_q(e%N_dim, e%N_quad) )
+
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+
+    !-------------------
+    ! Quadrature formula
+    !----------------------------------------------
+    e%x_q(1, 1) = (1.d0 - DSQRT(525.d0 + 70.d0*DSQRT(30.d0))/35.d0)*0.5d0
+    e%x_q(2, 1) = (1.d0 + DSQRT(525.d0 + 70.d0*DSQRT(30.d0))/35.d0)*0.5d0
+    e%x_q(3, 1) = (1.d0 + DSQRT(525.d0 - 70.d0*DSQRT(30.d0))/35.d0)*0.5d0
+    e%x_q(4, 1) = (1.d0 - DSQRT(525.d0 - 70.d0*DSQRT(30.d0))/35.d0)*0.5d0
+
+    e%w_q(1:2) = (18.d0 - DSQRT(30.d0))/72.d0 
+    e%w_q(3:4) = (18.d0 + DSQRT(30.d0))/72.d0
+    !-----------------------------------------------
+
+    e%p_Dphi_1_q = 0.d0
+    !e%p_Dphi_2_q = 0.d0
+
+    e%xx_q = 0.d0
+    
+  END SUBROUTINE init_quadrature_SEG_P3
   !====================================
  
 END MODULE Segment_Class

@@ -17,12 +17,15 @@ MODULE models
                          MANUFACTED_SOURCE  = 7, &
                          TRANSPORT_REACTION = 8, &
                          BOUNDARY_LAYER     = 9, &
-                         PURE_DIFFUSION     = 10
+                         PURE_DIFFUSION     = 10,&
+                         ELLIPTIC_PROBLEM   = 11,&
+                         MANUFACTED_AD      = 12
    !===============================================
    
    REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
+   REAL(KIND=8), PARAMETER :: aa_mod = 10.0E-3
    REAL(KIND=8), PARAMETER :: theta = 100.d0
-   REAL(KIND=8), PARAMETER :: theta_xi = 0.d0
+   REAL(KIND=8), PARAMETER :: theta_xi = 30.d0
    REAL(KIND=8), PARAMETER :: mu_br = 0.01d0
    REAL(KIND=8), PARAMETER :: c_bl  = 0.059d0
    !===============================================
@@ -69,8 +72,8 @@ MODULE models
              
 	 CASE(LIN_VISC_ADVEC)
 	 
-	    a(1) = 1.d0 * DSIN(theta_xi*PI/180.d0)
-	    a(2) = 1.d0 * DCOS(theta_xi*PI/180.d0)
+	    a(1) = DSIN(theta_xi*PI/180.d0)
+	    a(2) = DCOS(theta_xi*PI/180.d0)
 
          CASE(SMITH_HUTTON)
          
@@ -108,6 +111,16 @@ MODULE models
 
             a(1) = 0.d0
             a(2) = 0.d0
+
+         CASE(ELLIPTIC_PROBLEM)
+
+            a(1) = 0.d0
+            a(2) = 0.d0
+           
+         CASE(MANUFACTED_AD)
+            
+            a(1) = aa_mod * DSIN(theta_xi*PI/180.d0)
+	    a(2) = aa_mod * DCOS(theta_xi*PI/180.d0)
 
          CASE DEFAULT
          
@@ -196,6 +209,16 @@ MODULE models
             flux(1) = 0.d0
             flux(2) = 0.d0
 
+         CASE(ELLIPTIC_PROBLEM)
+
+            flux(1) = 0.d0
+            flux(2) = 0.d0
+
+         CASE(MANUFACTED_AD)
+            
+            flux(1) = uu * aa_mod * DSIN(theta_xi*PI/180.d0)
+	    flux(2) = uu * aa_mod * DCOS(theta_xi*PI/180.d0)
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -238,6 +261,14 @@ MODULE models
 
             flux = mu * D_uu
 
+         CASE(ELLIPTIC_PROBLEM)
+
+            flux = D_uu
+
+         CASE(MANUFACTED_AD)
+
+            flux = mu * D_uu
+
          CASE DEFAULT
 
 !!$            WRITE(*,*) 'Problem of unknow type.'
@@ -264,6 +295,8 @@ MODULE models
       
       REAL(KIND=8) :: S
       !------------------------------------
+
+      REAL(KIND=8), DIMENSION(2) :: aa
 
       REAL(KIND=8) :: r, c, t1, t2, t3, t9, t13, &
                          t14, t15, t16, t24, t25, t27
@@ -310,6 +343,14 @@ MODULE models
               (0.3D1 / 0.4D1 * y / t3 / t16 * t9 - &
               t24 * t25 * t27 / x / t16 * t9 / 0.4D1 - t25 * t27 / x * t9)
 
+      CASE(MANUFACTED_AD)
+
+         aa = advection_speed(type_pb, uu, x, y)
+         
+         s = 0.15d0 * aa(1) * DCOS(PI * x) * PI + &
+             0.05d0 * aa(2) * DSIN(0.5d0 * PI * y) * PI - &
+             mu * (-0.15D0 * DSIN(PI * x) * PI** 2 + &
+             0.025d0 * DCOS(0.5d0 * PI * y) * PI**2)
 
       CASE DEFAULT
 
@@ -341,7 +382,8 @@ MODULE models
         CASE( ADVECTION_SOURCE,   &
               MANUFACTED_SOURCE,  &
               TRANSPORT_REACTION, &
-              BOUNDARY_LAYER )
+              BOUNDARY_LAYER,     &
+              MANUFACTED_AD)
 
            logic = .TRUE.
 
@@ -446,6 +488,14 @@ MODULE models
          CASE(PURE_DIFFUSION)
 
             CALL bc_pure_diffusion()
+
+         CASE(ELLIPTIC_PROBLEM)
+
+            CALL bc_elliptic_problem()
+
+         CASE(MANUFACTED_AD)
+
+            CALL bc_manufacted_ad()
 
          CASE DEFAULT
          
@@ -606,16 +656,6 @@ CONTAINS
             ENDIF
          ENDDO
 
-         DO k = 1, Nv           
-            IF ( (ABS(coord(1, k)  - 1.d0)) <= 0.d0 ) THEN
-               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
-               rhs_l(k) = 0.d0              
-               n_loc = n_loc + 1
-               is_loc(n_loc) = k
-               b_flag = .TRUE.             
-            ENDIF            
-         ENDDO
-
          DO k = 1, Nv
             IF ( ABS(coord(2, k)) <= 0.d0 )THEN
                u_l(k) =  visc_advection(coord(1, k), coord(2, k), visc)
@@ -625,7 +665,27 @@ CONTAINS
                b_flag = .TRUE.             
             ENDIF            
          ENDDO   
- 
+
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF            
+         ENDDO
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+
       END SUBROUTINE bc_linviscadv
       !...........................
       
@@ -897,6 +957,111 @@ CONTAINS
        END SUBROUTINE bc_pure_diffusion       
        !..................................
 
+       !................................
+       SUBROUTINE  bc_elliptic_problem()
+       !
+       ! Square [0,1]x[0,1]
+       !
+       IMPLICIT NONE
+
+         DO k = 1, Nv
+            IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                 ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_elliptic_pb(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_elliptic_pb(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+          
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_elliptic_pb(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+ 
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+               u_l(k) = u_ex_elliptic_pb(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO 
+
+       END SUBROUTINE bc_elliptic_problem       
+       !..................................
+
+       !............................
+       SUBROUTINE bc_manufacted_ad()
+       !
+       ! Square [0,1]x[0,1]
+       !
+       IMPLICIT NONE
+
+         DO k = 1, Nv
+             IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_manufacted_ad(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO 
+             
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_manufacted_ad(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+   
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_manufacted_ad(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO        
+
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+               u_l(k) = u_ex_manufacted_ad(coord(1, k), coord(2, k))
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO 
+
+       END SUBROUTINE bc_manufacted_ad
+       !..............................
+
+
    END SUBROUTINE strong_bc
    !=======================
    
@@ -987,6 +1152,14 @@ CONTAINS
 
          uu_ex = u_ex_pure_diff(x, y)
 
+      CASE(ELLIPTIC_PROBLEM)
+
+         uu_ex = u_ex_elliptic_pb(x,y)
+
+      CASE(MANUFACTED_AD)
+
+         uu_ex = u_ex_manufacted_ad(x, y)
+
       CASE DEFAULT
 
          stop
@@ -1027,6 +1200,14 @@ CONTAINS
       CASE(PURE_DIFFUSION)
 
          G_uu_ex = grad_pure_diff(x, y)
+
+      CASE(ELLIPTIC_PROBLEM)
+
+         G_uu_ex = grad_elliptic_pb(x, y)
+
+      CASE(MANUFACTED_AD)
+
+         G_uu_ex = grad_manufacted_ad(x, y)
 
       CASE DEFAULT
 
@@ -1223,5 +1404,77 @@ CONTAINS
 
      END FUNCTION grad_pure_diff
      !==========================
+     
+     !========================================
+     FUNCTION u_ex_elliptic_pb(x, y) RESULT(f)
+     !========================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+      
+       REAL(KIND=8) :: f
+       !--------------------------------------------
+
+       f = DSIN(x)*DEXP(y)
+
+     END FUNCTION u_ex_elliptic_pb
+     !============================
+
+     !=========================================
+     FUNCTION grad_elliptic_pb(x, y) RESULT(GG)
+     !=========================================
+   
+       IMPLICIT NONE
+   
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+            
+       REAL(KIND=8), DIMENSION(2) :: GG
+       !--------------------------------
+      
+       GG(1) = DCOS(x)*DEXP(y)
+       GG(2) = DSIN(x)*DEXP(y)
+
+     END FUNCTION grad_elliptic_pb     
+     !============================
+
+     !==========================================
+     FUNCTION u_ex_manufacted_ad(x, y) RESULT(f)
+     !==========================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+      
+       REAL(KIND=8) :: f
+       !--------------------------------------------
+       
+
+       f = 1.d0 + 0.15d0 * DSIN(PI * x) - 0.1d0 * DCOS(0.5D0 * PI * y)
+       
+
+     END FUNCTION u_ex_manufacted_ad
+     !==============================
+
+     !============================================
+     FUNCTION  grad_manufacted_ad(x, y) RESULT(GG)
+     !============================================
+
+       IMPLICIT NONE
+   
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+            
+       REAL(KIND=8), DIMENSION(2) :: GG
+       !--------------------------------
+
+       GG(1) = 0.15*DCOS(PI*x)*PI
+       GG(2) = 0.05*DSIN(0.5d0*PI*y)*PI
+
+     END FUNCTION grad_manufacted_ad
+     !===============================     
 
 END MODULE models

@@ -48,6 +48,8 @@ CONTAINS
     INTEGER :: UNIT, ierror, type, jt, j, k
     !-------------------------------------------------------
 
+!real(kind=8), dimension(N_dim, N_dofs) :: D_uu
+
     N_tri = 0
     N_qua = 0
     ns    = 0
@@ -59,6 +61,8 @@ CONTAINS
           N_tri = N_tri + 1
        CASE(TRI_P2)
           N_tri = N_tri + 4
+       CASE(TRI_P3) 
+          N_tri = N_tri + 9
        CASE(QUA_Q1)
           N_qua = N_qua + 1
        CASE(QUA_Q2)
@@ -93,6 +97,8 @@ CONTAINS
    WRITE(UNIT, 110)
 
    Glo2Loc = 0 
+
+!D_uu = Compute_gradient(uu)
 
    DO type = TRI, QUA
 
@@ -135,6 +141,7 @@ CONTAINS
 
                  WRITE(UNIT, 200) coord(:, j), uu(j), uu_ex
 
+!WRITE(UNIT, 200) coord(:, j), D_uu(1, j), uu_ex
               ENDIF
 
            ENDDO
@@ -169,6 +176,44 @@ CONTAINS
                      WRITE(UNIT, *)  Glo2Loc(elements(jt)%p%NU(6)), &
                                      Glo2Loc(elements(jt)%p%Nu(4)), &
                                      Glo2Loc(elements(jt)%p%Nu(5))
+
+                  CASE(TRI_P3)
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(1)), &
+                                    Glo2Loc(elements(jt)%p%Nu(4)), &
+                                    Glo2Loc(elements(jt)%p%Nu(9))
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(4)), &
+                                    Glo2Loc(elements(jt)%p%Nu(5)), &
+                                    Glo2Loc(elements(jt)%p%Nu(10))
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(5)), &
+                                    Glo2Loc(elements(jt)%p%Nu(2)), &
+                                    Glo2Loc(elements(jt)%p%Nu(6))
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(6)), &
+                                    Glo2Loc(elements(jt)%p%Nu(7)), &
+                                    Glo2Loc(elements(jt)%p%Nu(10))
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(7)), &
+                                    Glo2Loc(elements(jt)%p%Nu(3)), &
+                                    Glo2Loc(elements(jt)%p%Nu(8))
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(8)), &
+                                    Glo2Loc(elements(jt)%p%Nu(9)), &
+                                    Glo2Loc(elements(jt)%p%Nu(10))
+                     
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(9)), &
+                                    Glo2Loc(elements(jt)%p%Nu(4)), &
+                                    Glo2Loc(elements(jt)%p%Nu(10))
+                     
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(5)), &
+                                    Glo2Loc(elements(jt)%p%Nu(6)), &
+                                    Glo2Loc(elements(jt)%p%Nu(10))
+
+                     WRITE(UNIT, *) Glo2Loc(elements(jt)%p%NU(7)), &
+                                    Glo2Loc(elements(jt)%p%Nu(8)), &
+                                    Glo2Loc(elements(jt)%p%Nu(10))
 
                   CASE(QUA_Q1)
 
@@ -235,13 +280,18 @@ CONTAINS
       REAL(KIND=8), DIMENSION(:), INTENT(IN)  :: uu      
       !---------------------------------------------
 
-      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: uu_ex
-      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: err_ele
+      REAL(KIND=8), DIMENSION(:,:), POINTER :: p
+      REAL(KIND=8), DIMENSION(:),   POINTER :: w
+      REAL(KIND=8), DIMENSION(:,:), POINTER :: xy
+      !---------------------------------------------
       
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: uu_ex
+
       REAL(KIND=8) :: err_L2, err_Loo, int_uex
       REAL(KIND=8) :: err_Gx_L2, err_Gy_L2
+      REAL(KIND=8) :: uu_q, uu_ex_q, err_q
 
-      INTEGER :: je, i, ierror, UNIT
+      INTEGER :: je, i, iq, ierror, N_quad, UNIT
       !---------------------------------------------
 
       err_L2 = 0.d0; err_Loo = 0.d0; int_uex = 0.d0
@@ -251,30 +301,43 @@ CONTAINS
       !--------------------------------------------------
       DO je = 1, N_elements
 
-         ALLOCATE(   uu_ex(elements(je)%p%N_points), &
-                   err_ele(elements(je)%p%N_points)  )
-     
-         DO i = 1, elements(je)%p%N_points
-
-            uu_ex(i) = exact_solution(pb_type, elements(je)%p%Coords(:, i), visc)
-
-         ENDDO
-
-         err_ele = uu(elements(je)%p%NU) - uu_ex
-         
          !----------
          ! L_2 error
          !-------------------------------------
-         err_L2  = err_L2  + Int_d(elements(je)%p, err_ele**2)
-         int_uex = int_uex + Int_d(elements(je)%p, uu_ex**2)
+         N_quad   =  elements(je)%p%N_quad
+         p        => elements(je)%p%phi_q
+         xy       => elements(je)%p%xx_q
+         w        => elements(je)%p%w_q
+
+         DO iq = 1, N_quad
+
+            uu_q = SUM( uu(elements(je)%p%NU)* p(:, iq) )
+
+            uu_ex_q = exact_solution(pb_type, xy(:, iq), visc)
+
+            err_q = uu_q - uu_ex_q 
+
+            err_L2 = err_L2 + w(iq) * err_q**2
+
+            int_uex = int_uex + w(iq) * uu_ex_q**2
+
+         ENDDO
+
+         NULLIFY( p, w, xy )
 
          !-----------
          ! L_oo error
          !-------------------------------------
+         ALLOCATE(  uu_ex(elements(je)%p%N_points) )
+
+         DO i = 1, elements(je)%p%N_points
+            uu_ex(i) = exact_solution(pb_type, elements(je)%p%Coords(:, i), visc)
+         ENDDO
+
          err_Loo = MAX( err_Loo, &
                         MAXVAL(ABS(uu(elements(je)%p%NU) - uu_ex)) )
 
-         DEALLOCATE( uu_ex, err_ele )
+         DEALLOCATE( uu_ex )
 
       ENDDO
 
@@ -333,18 +396,20 @@ CONTAINS
       REAL(KIND=8), DIMENSION(:), INTENT(IN)  :: uu
       REAL(KIND=8),               INTENT(OUT) :: err_Gx_L2
       REAL(KIND=8),               INTENT(OUT) :: err_Gy_L2
-      !-------------------------------------------------
+      !---------------------------------------------------
+
+      REAL(KIND=8), DIMENSION(:,:), POINTER :: p
+      REAL(KIND=8), DIMENSION(:),   POINTER :: w
+      REAL(KIND=8), DIMENSION(:,:), POINTER :: xy
+      !----------------------------------------------------
 
       REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: D_uu
 
-      REAL(KIND=8), DIMENSION(2) :: D_u_ex
+      REAL(KIND=8), DIMENSION(2) :: D_u_ex_q, D_u_q
 
-      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: err2_x, err2_y 
-      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: d2_x, d2_y
+      INTEGER :: je, k, i, iq, N_quad
 
-      INTEGER :: je, k, i
-
-      REAL(KIND=8) :: int_d2_x, int_d2_y
+      REAL(KIND=8) :: err_q_x, err_q_y, int_d2_x, int_d2_y
       !---------------------------------------------
 
       err_Gx_L2 = 0.d0;  err_Gy_L2 = 0.d0
@@ -356,32 +421,31 @@ CONTAINS
 
       DO je = 1, N_elements
 
-         ALLOCATE( err2_x(elements(je)%p%N_points), &
-                   err2_y(elements(je)%p%N_points), &
-                     d2_x(elements(je)%p%N_points), &
-                     d2_y(elements(je)%p%N_points) )
+         N_quad   =  elements(je)%p%N_quad
+         p        => elements(je)%p%phi_q
+         xy       => elements(je)%p%xx_q
+         w        => elements(je)%p%w_q
 
-         DO k = 1, elements(je)%p%N_points
+         DO iq = 1, N_quad
 
-            D_u_ex = exact_grad(pb_type, &
-                                elements(je)%p%coords(:, k), &
-                                visc )         
+            D_u_q(1) = SUM( D_uu(1, elements(je)%p%NU)* p(:, iq) )
+            D_u_q(2) = SUM( D_uu(2, elements(je)%p%NU)* p(:, iq) )
 
-            err2_x(k) = ( D_uu(1, elements(je)%p%NU(k)) - D_u_ex(1) )**2
-            err2_y(k) = ( D_uu(2, elements(je)%p%NU(k)) - D_u_ex(2) )**2
+            D_u_ex_q = exact_grad(pb_type, xy(:, iq), visc)
 
-            d2_x(k) = D_u_ex(1)**2
-            d2_y(k) = D_u_ex(2)**2
+            err_q_x = D_u_q(1) - D_u_ex_q(1)
+            err_q_y = D_u_q(2) - D_u_ex_q(2)
+
+            err_Gx_L2 = err_Gx_L2 + w(iq) * err_q_x**2
+            err_Gy_L2 = err_Gy_L2 + w(iq) * err_q_y**2
+
+            int_d2_x = int_d2_x + w(iq) * D_u_ex_q(1)**2
+            int_d2_y = int_d2_y + w(iq) * D_u_ex_q(2)**2
 
          ENDDO
 
-         err_Gx_L2 = err_Gx_L2 + Int_d(elements(je)%p, err2_x)
-         err_Gy_L2 = err_Gy_L2 + Int_d(elements(je)%p, err2_y)
+         NULLIFY( p, w, xy )
 
-         int_d2_x = int_d2_x + Int_d(elements(je)%p, d2_x)
-         int_d2_y = int_d2_y + Int_d(elements(je)%p, d2_y)
-
-         DEALLOCATE(  err2_x, err2_y, d2_x, d2_y )
 
       ENDDO
     

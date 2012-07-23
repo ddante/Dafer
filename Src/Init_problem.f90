@@ -52,11 +52,11 @@ CONTAINS
       
       uu = 0.d0;  rhs = 0.d0
 
+!uu = Init_with_ExactSol()
+
       with_source = detect_source(pb_type)
 
       CALL strong_bc(pb_type, visc, uu, rhs)
-
-uu = Init_with_ExactSol()
 
       ! Delete a possible previous convergence history...
       UNIT = 4

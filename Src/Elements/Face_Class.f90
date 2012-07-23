@@ -5,6 +5,7 @@ MODULE Face_Class
   !==================================
   INTEGER, PARAMETER :: SEG_P1 = 1
   INTEGER, PARAMETER :: SEG_P2 = 2
+  INTEGER, PARAMETER :: SEG_P3 = 3
   !==================================
 
   !-------------------------------------------

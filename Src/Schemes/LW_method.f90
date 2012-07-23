@@ -4,7 +4,7 @@ MODULE LW_method
   USE geometry,         ONLY: N_dim, elements
   USE init_problem,     ONLY: pb_type
   USE models,           ONLY: advection_speed, source_term
-  USE init_problem,     ONLY: is_visc, visc
+  USE init_problem,     ONLY: is_visc, visc, order
   USE Quadrature_rules, ONLY: int_d_G
 
   IMPLICIT NONE
@@ -72,9 +72,13 @@ CONTAINS
 
     Lr = reference_length(a_m, visc)
 
-    Tr = Lr / ( SQRT( SUM(a_m**2) ) + (visc/Lr) )   
+    Tr = Lr / ( SQRT( SUM(a_m**2) ) + (visc/Lr) )
 
-    Re_l = SQRT( SUM(a_m**2) ) * Lr / visc
+    IF(is_visc) THEN
+       Re_l = SQRT( SUM(a_m**2) ) * Lr / visc
+    ELSE
+       Re_l =HUGE(1.d0)
+    ENDIF
 
     Re_h = local_Pe(ele, u)
     
@@ -207,7 +211,8 @@ CONTAINS
 
     ENDDO
 
-    inv_dt = 2.d0 * inv_dt
+!    inv_dt = REAL(Order - 1) * inv_dt
+    inv_dt = 3.d0 * inv_dt
 
     NULLIFY( w, D_phi_q, phi_q, D_phi_k )
 
@@ -235,7 +240,7 @@ CONTAINS
     IF( is_visc ) THEN
        Re_pi = ( SQRT( SUM(a**2) ) / Pi ) / (nu)
     ELSE
-       Re_pi = HUGE(1.d0)
+       Re_pi = 1.0E+10;!HUGE(1.d0)
     ENDIF
 
     Lr = (0.5d0/Pi) * &

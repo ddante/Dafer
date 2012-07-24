@@ -94,20 +94,20 @@ MODULE Element_Class
      !------------------
      ! Gradient recovery
      !------------------------------------------------------------
-     ! # recovery points
-     INTEGER :: N_rcv
-     ! Reference Coordinates of the recovery points
-     ! xx_q(ik, iq), , ik = 1, N_dim_ele, iq = 1, N_recovery_pt
+     ! # quadrature points
+     INTEGER :: N_quad_R
+     ! Reference Coordinates of the quadrature points
+     ! xx_q(ik, iq), , ik = 1, N_dim_ele, iq = 1, N_quad
      !------------------------------------------------------------
-     REAL(kind=8), DIMENSION(:,:),   POINTER :: x_R    
-     ! Physical coordinates of the recovery points
+     REAL(kind=8), DIMENSION(:,:),   POINTER :: x_q_R    
+     ! Physical coordinates of the quadrature points
      ! xx_q(id, iq), , id = 1, N_dim, iq = 1, N_quad
-     REAL(kind=8), DIMENSION(:,:),   POINTER :: xx_R
+     REAL(kind=8), DIMENSION(:,:),   POINTER :: xx_q_R
      !------------------------------------------------------------
-     ! Gradient of basis functions at the recovery point
+     ! Gradient of basis functions at the quadrature point
      ! D_phi_q(id, i, iq), 
      ! id =1, N_dim, i = 1, N_points,  iq = 1, N_quad
-     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_R
+     REAL(KIND=8), DIMENSION(:,:,:), POINTER :: D_phi_q_R
 
      !---------------
      !Faces structure

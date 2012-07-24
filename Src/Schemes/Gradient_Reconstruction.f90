@@ -7,7 +7,7 @@ MODULE Gradient_Reconstruction
   USE Quadrature_rules
 
   USE init_problem, ONLY: order, pb_type, visc
-  USE Models,       ONLY: exact_grad
+  USE Models,       ONLY: exact_grad, advection_speed
 
   IMPLICIT NONE
 
@@ -37,7 +37,7 @@ MODULE Gradient_Reconstruction
                         SPR_ZZ        = 4
                         
   !===========================================
-  integer :: type_reconstruction = 1
+  integer :: type_reconstruction = 4
 
   PRIVATE
   PUBLIC :: Compute_gradient, DestroyPETSc
@@ -402,13 +402,15 @@ CONTAINS
 
     REAL(KIND=8) :: x_0, y_0, x_k, y_k
 
-    INTEGER :: je, i, j, k, n, Nu
+    INTEGER :: je, i, j, k, iq, n, Nu
     !------------------------------------------------
 
     D_uu = 0.d0
 
-    ALLOCATE( b(N_dofs), ss(N_dofs) )
-    DO i = 1, N_dofs
+    ALLOCATE(  b(SIZE(A_t)), &
+              ss(SIZE(A_t)) )
+
+    DO i = 1, SIZE(b)
 
        n = SIZE(A_t(i)%MM, 2)
        ALLOCATE( b(i)%v(n, N_dim) )
@@ -420,24 +422,28 @@ CONTAINS
 
     ENDDO
 
-    ALLOCATE( Nk(N_dofs) )
+    ALLOCATE( Nk(SIZE(A_t)) )
     Nk = 0
 
     DO je = 1, N_elements
 
        ele = elements(je)%p
 
-       DO k = 1, N_dim
-          GG(k) = SUM( uu(ele%Nu) * ele%D_phi_q(k, :, 1) )
-       ENDDO
+       DO iq = 1, ele%N_rcv
+
+          DO k = 1, N_dim
+             GG(k) = SUM( uu(ele%Nu) * ele%D_phi_R(k, :, iq) )
+          ENDDO
      
-       DO i = 1, ele%N_points
+          DO i = 1, ele%N_verts
 
-          Nu = ele%NU(i)
+             Nu = ele%NU(i)
 
-          Nk(Nu) = Nk(Nu) + 1
+             Nk(Nu) = Nk(Nu) + 1
 
-          b(Nu)%v(Nk(Nu),:) = GG
+             b(Nu)%v(Nk(Nu),:) = GG
+
+          ENDDO
 
        ENDDO
 
@@ -445,7 +451,7 @@ CONTAINS
 
     DEALLOCATE(Nk)
 
-    DO i = 1, N_dofs
+    DO i = 1, SIZE(b)
        
        ALLOCATE( rhs(SIZE(A_t(i)%MM, 1)) )
 
@@ -470,9 +476,9 @@ CONTAINS
        ele = elements(je)%p
 
        DO j = 1, ele%N_faces
-
-          IF( ele%faces(j)%f%c_ele == 0 ) THEN
-             
+          
+          IF( ele%faces(j)%f%c_ele == 0 ) then
+       
              DO k = 1, ele%N_points
                 IF( ele%Nu(k) /= ele%faces(j)%f%Nu(1) .AND. &
                     ele%Nu(k) /= ele%faces(j)%f%Nu(2) ) THEN
@@ -487,17 +493,54 @@ CONTAINS
 
                 x_k = ele%faces(j)%f%Coords(1, k)
                 y_k = ele%faces(j)%f%Coords(2, k)
-
+               
                 D_uu(1, ele%faces(j)%f%Nu(k)) = &
                      ss(ele%Nu(n))%v(1, 1) + &
                      ss(ele%Nu(n))%v(2, 1)*(x_k - x_0) + &
-                     ss(ele%Nu(n))%v(3, 1)*(y_k - y_0) 
+                     ss(ele%Nu(n))%v(3, 1)*(y_k - y_0) + &
+                     ss(ele%Nu(n))%v(4, 1)*(x_k - x_0)**2 + &
+                     ss(ele%Nu(n))%v(5, 1)*(y_k - y_0)**2 + &
+                     ss(ele%Nu(n))%v(6, 1)*(x_k - x_0)*(y_k - y_0)
 
                 D_uu(2, ele%faces(j)%f%Nu(k)) = &
                      ss(ele%Nu(n))%v(1, 2) + &
                      ss(ele%Nu(n))%v(2, 2)*(x_k - x_0) + &
-                     ss(ele%Nu(n))%v(3, 2)*(y_k - y_0) 
+                     ss(ele%Nu(n))%v(3, 2)*(y_k - y_0) + &
+                     ss(ele%Nu(n))%v(4, 2)*(x_k - x_0)**2 + &
+                     ss(ele%Nu(n))%v(5, 2)*(y_k - y_0)**2 + &
+                     ss(ele%Nu(n))%v(6, 2)*(x_k - x_0)*(y_k - y_0)
 
+             ENDDO
+
+          ELSE
+             
+             DO i = 1, ele%faces(j)%f%N_Verts
+
+                x_0 = ele%Coords(1, i); y_0 = ele%Coords(2, i)
+
+                DO k = ele%faces(j)%f%N_Verts+1, ele%faces(j)%f%N_points
+
+                   x_k = ele%faces(j)%f%Coords(1, k)
+                   y_k = ele%faces(j)%f%Coords(2, k)
+                  
+                   D_uu(1, ele%faces(j)%f%Nu(k)) = &
+                        ss(ele%Nu(i))%v(1, 1) + &
+                        ss(ele%Nu(i))%v(2, 1)*(x_k - x_0) + &
+                        ss(ele%Nu(i))%v(3, 1)*(y_k - y_0) + &
+                        ss(ele%Nu(i))%v(4, 1)*(x_k - x_0)**2 + &
+                        ss(ele%Nu(i))%v(5, 1)*(y_k - y_0)**2 + &
+                        ss(ele%Nu(i))%v(6, 1)*(x_k - x_0)*(y_k - y_0)
+
+                   D_uu(2, ele%faces(j)%f%Nu(k)) = & 
+                        ss(ele%Nu(i))%v(1, 2) + &
+                        ss(ele%Nu(i))%v(2, 2)*(x_k - x_0) + &
+                        ss(ele%Nu(i))%v(3, 2)*(y_k - y_0) + &
+                        ss(ele%Nu(i))%v(4, 2)*(x_k - x_0)**2 + &
+                        ss(ele%Nu(i))%v(5, 2)*(y_k - y_0)**2 + &
+                        ss(ele%Nu(i))%v(6, 2)*(x_k - x_0)*(y_k - y_0)
+ 
+                ENDDO
+                
              ENDDO
 
           ENDIF
@@ -559,7 +602,7 @@ CONTAINS
        DO i = 1, N_s
 
           b_xy(:, i) = int_d_Gu_i( ele, uu(ele%NU), i )
-                    
+                
        ENDDO
 
        rows = ele%NU - 1

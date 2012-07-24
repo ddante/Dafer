@@ -26,6 +26,9 @@ MODULE Trianlge_Class
   PRIVATE :: init_faces_TRI_P3
 
   PRIVATE :: volume_quadrature
+  PRIVATE :: init_quadrature_TRI_P1
+  PRIVATE :: init_quadrature_TRI_P2
+  PRIVATE :: init_quadrature_TRI_P3
 
   PRIVATE :: basis_function
   PRIVATE :: basis_function_TRI_P1
@@ -57,6 +60,10 @@ MODULE Trianlge_Class
   PRIVATE :: rd_normal_TRI_P3
 
   PRIVATE :: Compute_Jacobian
+
+  PRIVATE :: recovery_procedure
+  PRIVATE :: init_Gradiet_Recovery_TRI_P1
+  PRIVATE :: init_Gradiet_Recovery_TRI_P2
 
 CONTAINS
 
@@ -143,6 +150,9 @@ CONTAINS
         ENDDO
 
         CALL nodal_gradients(e)
+
+       ! Store the information at the recovery points
+        CALL recovery_procedure(e)
 
      ENDIF
          
@@ -301,6 +311,54 @@ CONTAINS
 
   END SUBROUTINE nodal_gradients
   !=============================
+
+  !===============================
+  SUBROUTINE recovery_procedure(e)
+  !===============================
+
+    IMPLICIT NONE
+
+    CLASS(triangle) :: e    
+    !-----------------------------------------------
+
+    INTEGER :: iq, k
+    !-----------------------------------------------
+
+    SELECT CASE(e%Type)
+
+    CASE(TRI_P1)
+
+       CALL init_Gradiet_Recovery_TRI_P1(e)
+       
+    CASE(TRI_P2)
+
+       CALL init_Gradiet_Recovery_TRI_P2(e)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Triangle type for recovery'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+    !-------------------------------------    
+    ! Attach data to the recovey points
+    !---------------------------------------------------
+    DO iq = 1, e%N_rcv
+
+       DO k = 1, e%N_points
+         
+          e%xx_R(:, iq) = e%xx_R(:, iq) + &               
+                          basis_function( e, k, e%x_R(iq, :) ) * e%Coords(:, k)
+
+          e%D_phi_R(:, k, iq) = gradient( e, k, e%x_R(iq, :) )
+
+       ENDDO
+     
+    ENDDO
+
+  END SUBROUTINE recovery_procedure
+  !================================
 
 !*******************************************************************************
 !*******************************************************************************
@@ -857,8 +915,7 @@ CONTAINS
     REAL(KIND=8) :: alpha_1, beta_1
     !-----------------------------------------------
 
-!!$    e%N_quad = 6
-    e%N_quad = 1
+    e%N_quad = 6
 
     ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
 
@@ -872,24 +929,21 @@ CONTAINS
     !-------------------
     ! Quadrature formula
     !--------------------------------------
-!!$    alpha_1 = 0.816847572980459d0
-!!$    beta_1  = 0.091576213509771d0
-!!$
-!!$    e%x_q(1,:) = (/ alpha_1, beta_1 , beta_1  /)
-!!$    e%x_q(2,:) = (/ beta_1 , alpha_1, beta_1  /)
-!!$    e%x_q(3,:) = (/ beta_1 , beta_1 , alpha_1 /)
-!!$    e%w_q(1:3) = 0.109951743655322d0
-!!$    
-!!$    alpha_1 = 0.108103018168070d0
-!!$    beta_1  = 0.445948490915965d0
-!!$    
-!!$    e%x_q(4,:) = (/ alpha_1, beta_1 , beta_1  /)
-!!$    e%x_q(5,:) = (/ beta_1 , alpha_1, beta_1  /)
-!!$    e%x_q(6,:) = (/ beta_1 , beta_1 , alpha_1 /)    
-!!$    e%w_q(4:6) = 0.223381589678011d0
+    alpha_1 = 0.816847572980459d0
+    beta_1  = 0.091576213509771d0
 
-    e%x_q(1, :) = (/ 1.d0/3.d0, 1.d0/3.d0, 1.d0/3.d0 /)
-    e%w_q(1) = 1.d0
+    e%x_q(1,:) = (/ alpha_1, beta_1 , beta_1  /)
+    e%x_q(2,:) = (/ beta_1 , alpha_1, beta_1  /)
+    e%x_q(3,:) = (/ beta_1 , beta_1 , alpha_1 /)
+    e%w_q(1:3) = 0.109951743655322d0
+    
+    alpha_1 = 0.108103018168070d0
+    beta_1  = 0.445948490915965d0
+    
+    e%x_q(4,:) = (/ alpha_1, beta_1 , beta_1  /)
+    e%x_q(5,:) = (/ beta_1 , alpha_1, beta_1  /)
+    e%x_q(6,:) = (/ beta_1 , beta_1 , alpha_1 /)    
+    e%w_q(4:6) = 0.223381589678011d0
     !--------------------------------------
     
     e%w_q = e%w_q*0.5d0 ! J -> 0.5*det|J|  
@@ -898,6 +952,32 @@ CONTAINS
     
   END SUBROUTINE init_quadrature_TRI_P1
   !====================================
+
+  !=========================================
+  SUBROUTINE init_Gradiet_Recovery_TRI_P1(e)
+  !=========================================
+
+    IMPLICIT NONE
+    CLASS(triangle) :: e
+    !--------------------
+
+    e%N_rcv = 1
+
+    ALLOCATE( e%D_phi_R(e%N_dim, e%N_points, e%N_rcv) )
+    
+    ALLOCATE( e%x_R(e%N_rcv, 3) )
+
+    ALLOCATE( e%xx_R(e%N_dim, e%N_rcv) )
+
+    !----------------
+    ! Recovery points
+    !---------------------------------------------------------
+    e%x_R(1,:) = (/ 1.d0/3.d0, 1.d0/3.d0, 1.d0/3.d0 /)
+   
+    e%xx_R = 0.d0
+
+  END SUBROUTINE init_Gradiet_Recovery_TRI_P1
+  !==========================================
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1237,6 +1317,35 @@ CONTAINS
     
   END SUBROUTINE init_quadrature_TRI_P2
   !====================================
+
+  !=========================================
+  SUBROUTINE init_Gradiet_Recovery_TRI_P2(e)
+  !=========================================
+
+    IMPLICIT NONE
+    CLASS(triangle) :: e
+    !--------------------
+
+    e%N_rcv = 3
+
+    ALLOCATE( e%D_phi_R(e%N_dim, e%N_points, e%N_rcv) )
+    
+    ALLOCATE( e%x_R(e%N_rcv, 3) )
+
+    ALLOCATE( e%xx_R(e%N_dim, e%N_rcv) )
+
+    !----------------
+    ! Recovery points
+    !---------------------------------------------------------
+    e%x_R(1,:) = (/ 0.66666667d0, 0.16666667d0, 0.16666667d0 /)
+    e%x_R(2,:) = (/ 0.16666667d0, 0.66666667d0, 0.16666667d0 /)
+    e%x_R(3,:) = (/ 0.16666667d0, 0.16666667d0, 0.66666667d0 /)
+   
+    e%xx_R = 0.d0
+
+  END SUBROUTINE init_Gradiet_Recovery_TRI_P2
+  !==========================================
+
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%

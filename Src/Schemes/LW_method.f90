@@ -207,12 +207,11 @@ CONTAINS
        !inv_dt = MAX( inv_dt, &
        !           DOT_PRODUCT(a_m, ele%rd_n(:, j)) * (1.d0 + 1.d0/Re_l) )
 
-       inv_dt = MAX(inv_dt, DOT_PRODUCT(a_m, ele%rd_n(:, j)) + visc/Lr)
+       inv_dt = MAX(inv_dt, DOT_PRODUCT(a_m, ele%rd_n(:, j)) + visc/Lr)       
 
     ENDDO
 
-!    inv_dt = REAL(Order - 1) * inv_dt
-    inv_dt = 3.d0 * inv_dt
+    inv_dt = REAL(Order - 1) * inv_dt
 
     NULLIFY( w, D_phi_q, phi_q, D_phi_k )
 

@@ -6,7 +6,7 @@ MODULE Gradient_Reconstruction
 
   USE Quadrature_rules
 
-  USE init_problem, ONLY: order, pb_type, visc
+  USE init_problem, ONLY: order, pb_type, visc, grad_recovery
   USE Models,       ONLY: exact_grad, advection_speed
 
   IMPLICIT NONE
@@ -37,8 +37,7 @@ MODULE Gradient_Reconstruction
                         SPR_ZZ        = 4
                         
   !===========================================
-  integer :: type_reconstruction = 4
-
+ 
   PRIVATE
   PUBLIC :: Compute_gradient, DestroyPETSc
 
@@ -55,7 +54,7 @@ CONTAINS
     REAL(KIND=8), DIMENSION(N_dim, SIZE(uu)) :: D_uu 
     !-----------------------------------------------
 
-    SELECT CASE( type_reconstruction )
+    SELECT CASE( grad_recovery )
 
     CASE( EXACT )
 
@@ -378,7 +377,11 @@ CONTAINS
   !=======================================
   FUNCTION SPRZZ_gradient(uu) RESULT(D_uu)
   !=======================================
-
+  ! 
+  ! WARNING: there is a problem in the case
+  !          of a triangle with all the vertices
+  !          wich belong to the boundaies
+  !
     IMPLICIT NONE
 
     REAL(KIND=8), DIMENSION(:),   INTENT(IN)  :: uu
@@ -402,7 +405,7 @@ CONTAINS
 
     REAL(KIND=8) :: x_0, y_0, x_k, y_k
 
-    INTEGER :: je, i, j, k, iq, n, Nu
+    INTEGER :: je, i, j, jf, k, iq, n, Nu, Nu_i, Nu_b
     !------------------------------------------------
 
     D_uu = 0.d0
@@ -425,6 +428,9 @@ CONTAINS
     ALLOCATE( Nk(SIZE(A_t)) )
     Nk = 0
 
+    ! Construction of the RHS terms
+    ! for each mesh vertex
+    !--------------------------------
     DO je = 1, N_elements
 
        ele = elements(je)%p
@@ -448,9 +454,13 @@ CONTAINS
        ENDDO
 
     ENDDO
+    !--------------------------------
 
     DEALLOCATE(Nk)
 
+    ! Polynomial coeff. for the recoverd
+    ! gradient at each mesh vertex
+    !--------------------------------
     DO i = 1, SIZE(b)
        
        ALLOCATE( rhs(SIZE(A_t(i)%MM, 1)) )
@@ -468,86 +478,224 @@ CONTAINS
        DEALLOCATE( rhs )
        
     ENDDO
+    !--------------------------------
+
+    !/////////////////////////////////////////
+    !// For the other DOFs the gradient     //
+    !// is computed extrapolating the value //
+    !// from the vertces                    //
+    !/////////////////////////////////////////
     
-    ! For the boundary nodes the gradient is computed
-    ! extrapolating the value from the interior nodes
+    ! Dofs on the faces
     DO je = 1, N_elements
        
        ele = elements(je)%p
 
        DO j = 1, ele%N_faces
           
-          IF( ele%faces(j)%f%c_ele == 0 ) then
-       
-             DO k = 1, ele%N_points
-                IF( ele%Nu(k) /= ele%faces(j)%f%Nu(1) .AND. &
-                    ele%Nu(k) /= ele%faces(j)%f%Nu(2) ) THEN
-                   n = k
-                   EXIT                   
-                ENDIF
-             ENDDO
-
-             x_0 = ele%Coords(1, n); y_0 = ele%Coords(2, n)
+          ! boundary nodes
+          IF( ele%faces(j)%f%c_ele == 0 ) THEN
 
              DO k = 1, ele%faces(j)%f%N_points
+             
+                Nu_b = ele%faces(j)%f%Nu(k)
 
                 x_k = ele%faces(j)%f%Coords(1, k)
                 y_k = ele%faces(j)%f%Coords(2, k)
-               
-                D_uu(1, ele%faces(j)%f%Nu(k)) = &
-                     ss(ele%Nu(n))%v(1, 1) + &
-                     ss(ele%Nu(n))%v(2, 1)*(x_k - x_0) + &
-                     ss(ele%Nu(n))%v(3, 1)*(y_k - y_0) + &
-                     ss(ele%Nu(n))%v(4, 1)*(x_k - x_0)**2 + &
-                     ss(ele%Nu(n))%v(5, 1)*(y_k - y_0)**2 + &
-                     ss(ele%Nu(n))%v(6, 1)*(x_k - x_0)*(y_k - y_0)
-
-                D_uu(2, ele%faces(j)%f%Nu(k)) = &
-                     ss(ele%Nu(n))%v(1, 2) + &
-                     ss(ele%Nu(n))%v(2, 2)*(x_k - x_0) + &
-                     ss(ele%Nu(n))%v(3, 2)*(y_k - y_0) + &
-                     ss(ele%Nu(n))%v(4, 2)*(x_k - x_0)**2 + &
-                     ss(ele%Nu(n))%v(5, 2)*(y_k - y_0)**2 + &
-                     ss(ele%Nu(n))%v(6, 2)*(x_k - x_0)*(y_k - y_0)
-
-             ENDDO
-
-          ELSE
-             
-             DO i = 1, ele%faces(j)%f%N_Verts
-
-                x_0 = ele%Coords(1, i); y_0 = ele%Coords(2, i)
-
-                DO k = ele%faces(j)%f%N_Verts+1, ele%faces(j)%f%N_points
-
-                   x_k = ele%faces(j)%f%Coords(1, k)
-                   y_k = ele%faces(j)%f%Coords(2, k)
-                  
-                   D_uu(1, ele%faces(j)%f%Nu(k)) = &
-                        ss(ele%Nu(i))%v(1, 1) + &
-                        ss(ele%Nu(i))%v(2, 1)*(x_k - x_0) + &
-                        ss(ele%Nu(i))%v(3, 1)*(y_k - y_0) + &
-                        ss(ele%Nu(i))%v(4, 1)*(x_k - x_0)**2 + &
-                        ss(ele%Nu(i))%v(5, 1)*(y_k - y_0)**2 + &
-                        ss(ele%Nu(i))%v(6, 1)*(x_k - x_0)*(y_k - y_0)
-
-                   D_uu(2, ele%faces(j)%f%Nu(k)) = & 
-                        ss(ele%Nu(i))%v(1, 2) + &
-                        ss(ele%Nu(i))%v(2, 2)*(x_k - x_0) + &
-                        ss(ele%Nu(i))%v(3, 2)*(y_k - y_0) + &
-                        ss(ele%Nu(i))%v(4, 2)*(x_k - x_0)**2 + &
-                        ss(ele%Nu(i))%v(5, 2)*(y_k - y_0)**2 + &
-                        ss(ele%Nu(i))%v(6, 2)*(x_k - x_0)*(y_k - y_0)
- 
-                ENDDO
                 
+                ! *** Find the domain vertex ***
+                DO i = 1, ele%N_verts
+
+                   n = 0
+
+                   DO jf = 1, ele%N_faces
+
+                      IF( ele%faces(jf)%f%c_ele == 0 .AND. &
+                           (ele%Nu(i) == ele%faces(jf)%f%Nu(1) .OR. &
+                            ele%Nu(i) == ele%faces(jf)%f%Nu(2)) ) THEN
+
+                         n = n+1
+                      ENDIF
+
+                   ENDDO
+
+                   IF(n == 0) THEN                        
+
+                      Nu_i = ele%Nu(i)
+
+                      x_0 = ele%Coords(1, i)
+                      y_0 = ele%Coords(2, i)
+
+                      EXIT
+
+                   ENDIF
+
+                ENDDO
+                ! *** done ***
+                
+                SELECT CASE(Order) 
+
+                CASE(2)
+
+                   D_uu(1, Nu_b) = &
+                        ss(Nu_i)%v(1, 1) + &
+                        ss(Nu_i)%v(2, 1)*(x_k - x_0) + &
+                        ss(Nu_i)%v(3, 1)*(y_k - y_0)
+
+                   D_uu(2, Nu_b) = &
+                        ss(Nu_i)%v(1, 2) + &
+                        ss(Nu_i)%v(2, 2)*(x_k - x_0) + &
+                        ss(Nu_i)%v(3, 2)*(y_k - y_0)
+
+                CASE(3)
+
+                   D_uu(1, Nu_b) = &
+                        ss(Nu_i)%v(1, 1) + &
+                        ss(Nu_i)%v(2, 1)*(x_k - x_0) + &
+                        ss(Nu_i)%v(3, 1)*(y_k - y_0) + &
+                        ss(Nu_i)%v(4, 1)*(x_k - x_0)**2 + &
+                        ss(Nu_i)%v(5, 1)*(y_k - y_0)**2 + &
+                        ss(Nu_i)%v(6, 1)*(x_k - x_0)*(y_k - y_0)
+
+                   D_uu(2, Nu_b) = &
+                        ss(Nu_i)%v(1, 2) + &
+                        ss(Nu_i)%v(2, 2)*(x_k - x_0) + &
+                        ss(Nu_i)%v(3, 2)*(y_k - y_0) + &
+                        ss(Nu_i)%v(4, 2)*(x_k - x_0)**2 + &
+                        ss(Nu_i)%v(5, 2)*(y_k - y_0)**2 + &
+                        ss(Nu_i)%v(6, 2)*(x_k - x_0)*(y_k - y_0) 
+
+                CASE DEFAULT
+
+                   WRITE(*,*) 'ERROR, order nont supported'
+                   STOP
+
+                END SELECT
+                   
+             ENDDO
+             
+          ! Internal nodes
+          ELSEIF( ele%faces(j)%f%c_ele /=0 .AND. Order > 2 ) THEN
+
+             
+             DO k = ele%faces(j)%f%N_Verts+1, ele%faces(j)%f%N_points
+
+                Nu_b = ele%faces(j)%f%Nu(k)
+
+                x_k = ele%faces(j)%f%Coords(1, k)
+                y_k = ele%faces(j)%f%Coords(2, k)
+
+                ! *** Find the domain vertex ***
+                DO i = 1, ele%faces(j)%f%N_Verts
+
+                   n = 0
+                   
+                   DO jf = 1, ele%N_faces
+
+                      IF( ele%faces(jf)%f%c_ele == 0 .AND. &
+                           (ele%faces(j)%f%Nu(i) == ele%faces(jf)%f%Nu(1) .OR. &
+                            ele%faces(j)%f%Nu(i) == ele%faces(jf)%f%Nu(2)) ) THEN
+
+                         n = n+1
+                      ENDIF
+
+                   ENDDO
+                   
+                   IF(n == 0) THEN
+                      
+                      Nu_i = ele%faces(j)%f%Nu(i)
+
+                      x_0 = ele%faces(j)%f%Coords(1, i)
+                      y_0 = ele%faces(j)%f%Coords(2, i)
+
+                      EXIT
+
+                   ENDIF
+
+                ENDDO
+                ! *** done ***
+
+                D_uu(1, Nu_b) = &
+                     ss(Nu_i)%v(1, 1) + &
+                     ss(Nu_i)%v(2, 1)*(x_k - x_0) + &
+                     ss(Nu_i)%v(3, 1)*(y_k - y_0) + &
+                     ss(Nu_i)%v(4, 1)*(x_k - x_0)**2 + &
+                     ss(Nu_i)%v(5, 1)*(y_k - y_0)**2 + &
+                     ss(Nu_i)%v(6, 1)*(x_k - x_0)*(y_k - y_0)
+
+                D_uu(2, Nu_b) = &
+                     ss(Nu_i)%v(1, 2) + &
+                     ss(Nu_i)%v(2, 2)*(x_k - x_0) + &
+                     ss(Nu_i)%v(3, 2)*(y_k - y_0) + &
+                     ss(Nu_i)%v(4, 2)*(x_k - x_0)**2 + &
+                     ss(Nu_i)%v(5, 2)*(y_k - y_0)**2 + &
+                     ss(Nu_i)%v(6, 2)*(x_k - x_0)*(y_k - y_0)
+
+                ENDDO
+
+             ENDIF
+
+          ENDDO
+
+          ! Internal dof
+          IF(ele%N_verts+ele%N_faces < ele%N_points) THEN
+
+             DO k = ele%N_verts+ele%N_faces+1, ele%N_points
+
+                x_k = ele%Coords(1, k)
+                y_k = ele%Coords(2, k)
+
+                ! *** Find the domain vertex ***
+                DO i = 1, ele%N_verts
+
+                   n = 0
+
+                   DO jf = 1, ele%N_faces
+
+                      IF( ele%faces(jf)%f%c_ele == 0 .AND. &
+                           (ele%Nu(i) == ele%faces(jf)%f%Nu(1) .OR. &
+                            ele%Nu(i) == ele%faces(jf)%f%Nu(2)) ) THEN
+
+                         n = n+1
+                      ENDIF
+
+                   ENDDO
+
+                   IF(n == 0) THEN          
+
+                      Nu_i = ele%Nu(i)
+
+                      x_0 = ele%Coords(1, i)
+                      y_0 = ele%Coords(2, i)
+
+                      EXIT
+
+                   ENDIF
+
+                ENDDO
+                ! *** done ***
+
+                D_uu(1, ele%NU(k)) = &
+                     ss(Nu_i)%v(1, 1) + &
+                     ss(Nu_i)%v(2, 1)*(x_k - x_0) + &
+                     ss(Nu_i)%v(3, 1)*(y_k - y_0) + &
+                     ss(Nu_i)%v(4, 1)*(x_k - x_0)**2 + &
+                     ss(Nu_i)%v(5, 1)*(y_k - y_0)**2 + &
+                     ss(Nu_i)%v(6, 1)*(x_k - x_0)*(y_k - y_0)
+
+                D_uu(2, ele%NU(k)) = &
+                     ss(Nu_i)%v(1, 2) + &
+                     ss(Nu_i)%v(2, 2)*(x_k - x_0) + &
+                     ss(Nu_i)%v(3, 2)*(y_k - y_0) + &
+                     ss(Nu_i)%v(4, 2)*(x_k - x_0)**2 + &
+                     ss(Nu_i)%v(5, 2)*(y_k - y_0)**2 + &
+                     ss(Nu_i)%v(6, 2)*(x_k - x_0)*(y_k - y_0)
+
              ENDDO
 
           ENDIF
 
        ENDDO
-
-    ENDDO
 
   END FUNCTION SPRZZ_gradient
   !==========================  

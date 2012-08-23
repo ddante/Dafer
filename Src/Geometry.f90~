@@ -47,6 +47,7 @@ MODULE geometry
   !==========================================================
 
   PUBLIC :: read_gmshMesh, read_MeshFBx, Init_Elements
+  PUBLIC :: Build_LSQ_Matrix_O2, Build_LSQ_Matrix_O3, Build_SPR_Matrix
   PUBLIC :: N_dim, N_dofs, N_elements, elements, inv_A, A_t
   !==========================================================
 
@@ -121,7 +122,7 @@ CONTAINS
                                   rr_nodes(:, ele(jt)%verts),   &
                                   ele(jt)%NU_seg, ele(jt)%n_ele )
 
-             elements(jt)%p => qua
+             elements(jt)%p => qua;
 
           END SELECT
           
@@ -323,15 +324,6 @@ CONTAINS
 
     DEALLOCATE( ele, edge_ele, rr_nodes )
 
-!!$    SELECT CASE(Order)
-!!$    CASE(2)
-!!$       CALL Build_LSQ_Matrix_O2
-!!$    CASE(3)
-!!$       CALL Build_LSQ_Matrix_O3
-!!$    END SELECT
-
-    CALL Build_SPR_Matrix()
-    
   END SUBROUTINE Init_Elements
   !===========================
 
@@ -1090,14 +1082,17 @@ CONTAINS
   END SUBROUTINE Build_LSQ_Matrix_O3
   !=================================
 
-  !============================
-  SUBROUTINE Build_SPR_Matrix()
-  !============================
+  !=================================
+  SUBROUTINE Build_SPR_Matrix(Order)
+  !=================================
   !
   ! Construct the matrix "A" for the
   ! superconvergent patch recovery scheme ZZ
   !
     IMPLICIT NONE
+
+    INTEGER, INTENT(IN) :: Order
+    !----------------------------------------
 
     TYPE(element) :: ele
   
@@ -1110,7 +1105,7 @@ CONTAINS
 
     REAL(KIND=8) :: xi, eta
 
-    INTEGER :: je, i, k, j, iq, n_r, n_c, Nu, N_dofs_V
+    INTEGER :: je, i, k, j, iq, n_r, n_c, Nu, N_dofs_V, N_o
     !----------------------------------------
 
     N_dofs_V = N_nodes
@@ -1136,9 +1131,10 @@ CONTAINS
     ! Size(A):
     ! (#recovery points * #element of the bubble) x
     ! #coeff. of the polynomial expansion
+    N_o = Order*(Order + 1)/2
+
     DO i = 1, N_dofs_V
-!       ALLOCATE( A_t(i)%MM(NN_A(i), 3) )
-       ALLOCATE( A_t(i)%MM(3*NN_A(i), 6) )
+       ALLOCATE( A_t(i)%MM(ele%N_rcv*NN_A(i), N_o) )
        A_t(i)%MM = 0.d0
     ENDDO
 
@@ -1160,8 +1156,17 @@ CONTAINS
              DO k = 1, SIZE(A_t(Nu)%MM, 1)
 
                 IF(A_t(Nu)%MM(k, 1) == 0) THEN
-!                   A_t(Nu)%MM(k, :) = (/ 1.d0, xi, eta /) ! Linear
-                   A_t(Nu)%MM(k, :) = (/ 1.d0, xi, eta, xi**2, eta**2, xi*eta /) ! Quadratic
+
+                   SELECT CASE (Order)
+                   CASE(2)
+                      A_t(Nu)%MM(k, :) = (/ 1.d0, xi, eta /) ! Linear
+                   CASE(3)
+                      A_t(Nu)%MM(k, :) = (/ 1.d0, xi, eta, xi**2, eta**2, xi*eta /) ! Quadratic
+                   CASE DEFAULT
+                      WRITE(*,*) 'ERROR, order nont supported'
+                      STOP
+                   END SELECT
+                   
                    EXIT
                 ENDIF
 
@@ -1196,7 +1201,7 @@ CONTAINS
        ! Exclude the boundary points
        ! for which the matrix is singular
        ! or ill-conditioned
-       IF(SIZE(AA_tr, 2) > 6) THEN
+       IF(SIZE(AA_tr, 2) >= N_o) THEN
           inv_A(i)%MM = inverse_LU( AA )
        ENDIF
 

@@ -2,6 +2,7 @@ MODULE Quadrangle_Class
 
   USE Element_Class
   USE Segment_Class
+  USE Lin_Algebra
 
   IMPLICIT NONE
 
@@ -13,36 +14,49 @@ MODULE Quadrangle_Class
    CONTAINS
 
      PROCEDURE, PUBLIC :: initialize => initialize_sub
-     PROCEDURE, PUBLIC :: basis_function => basis_function_fun
-     PROCEDURE, PUBLIC :: gradient_ref   => gradient_ref_fun
-     PROCEDURE, PUBLIC :: gradient       => gradient_fun
-     PROCEDURE, PUBLIC :: face_trace     => face_trace_fun
-     PROCEDURE, PUBLIC :: gradient_trace => gradient_trace_sub
 
   END TYPE quadrangle
   !=========================================
 
   PRIVATE :: initialize_sub
+
+  PRIVATE :: init_faces
   PRIVATE :: init_faces_QUA_Q1
   PRIVATE :: init_faces_QUA_Q2
 
-  PRIVATE :: basis_function_fun
+  PRIVATE :: volume_quadrature
+  PRIVATE :: init_quadrature_QUA_Q1
+  PRIVATE :: init_quadrature_QUA_Q2
+
+  PRIVATE :: basis_function
   PRIVATE :: basis_function_QUA_Q1
   PRIVATE :: basis_function_QUA_Q2
 
-  PRIVATE :: gradient_ref_fun
+  PRIVATE :: gradient
+
+  PRIVATE :: gradient_ref
   PRIVATE :: gradient_ref_QUA_Q1
   PRIVATE :: gradient_ref_QUA_Q2
 
-  PRIVATE :: gradient_fun
+  PRIVATE :: DOFs_ref
+  PRIVATE :: DOFs_ref_QUA_Q1
+  PRIVATE :: DOFs_ref_QUA_Q2
 
-  PRIVATE :: face_trace_fun
+  PRIVATE :: gradient_trace
+
+  PRIVATE :: face_trace
   PRIVATE :: face_trace_QUA_Q1
   PRIVATE :: face_trace_QUA_Q2
 
-  PRIVATE :: rd_normal_fun
+  PRIVATE :: rd_normal
   PRIVATE :: rd_normal_QUA_Q1
   PRIVATE :: rd_normal_QUA_Q2
+
+  PRIVATE :: Compute_Jacobian
+
+  PRIVATE :: recovery_procedure
+  PRIVATE :: init_Gradiet_Recovery_QUA_Q1
+  PRIVATE :: init_Gradiet_Recovery_QUA_Q2
 
 CONTAINS
 
@@ -86,11 +100,6 @@ CONTAINS
        e%N_verts  = 4      ! # Vertices
        e%N_points = 4      ! # DoFs
 
-       IF( mode == "element") THEN
-          ! FACES
-          CALL init_faces_QUA_Q1(e, Nodes, Coords, NU_seg, n_ele)
-       ENDIF
-
     CASE(9)
 
        !---------
@@ -100,11 +109,6 @@ CONTAINS
        e%N_verts  = 4      ! # Vertices
        e%N_points = 9      ! # DoFs
 
-       IF( mode == "element") THEN
-          ! FACES
-          CALL init_faces_QUA_Q2(e, Nodes, Coords, NU_seg, n_ele)
-       ENDIF
-
      CASE DEFAULT
 
         WRITE(*,*) 'ERROR: Unsupported Quadrangle type'
@@ -112,21 +116,234 @@ CONTAINS
 
      END SELECT
 
-     !--------------------------
-     ! Normals for the RD scheme
-     !--------------------------------------
-     ALLOCATE( e%rd_n(e%N_dim, e%N_points) )
+     IF( mode == "element") THEN
 
-     DO i = 1, e%N_points
-        e%rd_n(:, i) = rd_normal_fun(e, i)
-     ENDDO
-     
+        CALL init_faces(e, Nodes, Coords, NU_seg, n_ele)
+
+        ! Store the informations at the quadrature points
+        CALL volume_quadrature(e)
+
+        !--------------------------
+        ! Normals for the RD scheme
+        !--------------------------------------
+        ALLOCATE( e%rd_n(e%N_dim, e%N_points) )
+        
+        DO i = 1, e%N_points
+           e%rd_n(:, i) = rd_normal(e, i)
+        ENDDO
+
+        CALL nodal_gradients(e)
+
+        ! Store the information at the recovery points
+        CALL recovery_procedure(e)
+
+     ENDIF
+   
   END SUBROUTINE initialize_sub
   !============================
 
-  !==================================================
-  FUNCTION basis_function_fun(e, i, xi) RESULT(psi_i)
-  !==================================================
+  !=====================================================
+  SUBROUTINE init_faces(e, Nodes, Coords, NU_seg, n_ele)
+  !=====================================================
+
+    IMPLICIT NONE
+    
+    CLASS(quadrangle)                        :: e
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: Nodes
+    REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: Coords
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: NU_seg
+    INTEGER,      DIMENSION(:),   INTENT(IN) :: n_ele
+    !-------------------------------------------------
+
+    SELECT CASE(e%Type)
+              
+    CASE(QUA_Q1)
+
+       CALL init_faces_QUA_Q1(e, Nodes, Coords, NU_seg, n_ele)
+       
+    CASE(QUA_Q2)
+
+       CALL init_faces_QUA_Q2(e, Nodes, Coords, NU_seg, n_ele)
+              
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Quadrangle type for face initialization'
+       STOP
+
+    END SELECT 
+
+  END SUBROUTINE init_faces
+  !=========================
+
+  !==============================
+  SUBROUTINE volume_quadrature(e)
+  !==============================
+  !
+  ! Store the following  quantities at the quadrature points
+  !    - value of the basis function
+  !    - normal versor
+  !    - weight of the quadrature formula (multipplied by 
+  !      the jacobian of the transformation)
+  !    - value of the trace of the gradient of basis functions
+  !    - physical coordiantes of the quadrature point
+  !
+  ! Compute the lenght of the segment
+  !
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+    !-----------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: JJ
+
+    INTEGER :: iq, k
+    !-----------------------------------------------
+
+    SELECT CASE(e%Type)
+
+    CASE(QUA_Q1)
+
+       CALL init_quadrature_QUA_Q1(e)
+       
+    CASE(QUA_Q2)
+
+       CALL init_quadrature_QUA_Q2(e)
+           
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Quadrangle type for quadrature'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+    !-------------------------------------    
+    ! Attach data to the quadrature points
+    !---------------------------------------------------
+    ALLOCATE( JJ(e%N_dim, e%N_dim) )
+
+    DO iq = 1, e%N_quad
+
+       DO k = 1, e%N_points
+
+          e%phi_q(k, iq) = basis_function( e, k, e%x_q(iq, :) )
+
+          e%xx_q(:, iq) = e%xx_q(:, iq) + &               
+                         basis_function( e, k, e%x_q(iq, :) ) * e%Coords(:, k)
+
+          e%D_phi_q(:, k, iq) = gradient( e, k, e%x_q(iq, :) )
+
+       ENDDO
+
+       ! warning: not optimized, jacobian computed twice       
+       JJ = Compute_Jacobian( e, e%x_q(iq, :) )
+
+       e%w_q(iq) = e%w_q(iq) * determinant(JJ)
+      
+    ENDDO
+
+    DEALLOCATE( JJ )
+
+    ! Area of the element
+    e%volume = SUM( e%w_q )    
+
+  END SUBROUTINE volume_quadrature
+  !===============================
+
+  !============================
+  SUBROUTINE nodal_gradients(e)
+  !============================
+  !
+  ! Compute the gradient of the basis functions
+  ! at the DOFs of the element
+  !
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e    
+    !-----------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: x_dof
+
+    INTEGER :: i, k
+    !-----------------------------------------------
+
+    ALLOCATE( x_dof(e%N_points, 2))
+    
+    x_dof = DOFs_ref(e)
+    
+    ALLOCATE( e%D_phi_k(e%N_dim, e%N_points, e%N_points) )
+
+    DO i = 1, e%N_points
+
+       DO k = 1, e%N_points
+
+          e%D_phi_k(:, i, k) = gradient( e, i, x_dof(k, :) )
+
+       ENDDO
+
+    ENDDO
+    
+    DEALLOCATE(x_dof)
+
+  END SUBROUTINE nodal_gradients
+  !=============================
+
+  !===============================
+  SUBROUTINE recovery_procedure(e)
+  !===============================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e    
+    !-----------------------------------------------
+
+    INTEGER :: iq, k
+    !-----------------------------------------------
+
+    SELECT CASE(e%Type)
+
+    CASE(QUA_Q1)
+
+       CALL init_Gradiet_Recovery_QUA_Q1(e)
+       
+    CASE(QUA_Q2)
+
+       CALL init_Gradiet_Recovery_QUA_Q2(e)
+       
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Quadrangle type for recovery'
+       WRITE(*,*) 'STOP'
+
+    END SELECT
+
+    !-------------------------------------    
+    ! Attach data to the recovey points
+    !---------------------------------------------------
+    DO iq = 1, e%N_rcv
+
+       DO k = 1, e%N_points
+         
+          e%xx_R(:, iq) = e%xx_R(:, iq) + &               
+                          basis_function( e, k, e%x_R(iq, :) ) * e%Coords(:, k)
+
+          e%D_phi_R(:, k, iq) = gradient( e, k, e%x_R(iq, :) )
+
+       ENDDO
+     
+    ENDDO
+
+  END SUBROUTINE recovery_procedure
+  !================================
+
+!*******************************************************************************
+!*******************************************************************************
+!                         COMPLEMENTARY FUNCTIONS                              !
+!*******************************************************************************
+!*******************************************************************************
+
+  !==============================================
+  FUNCTION basis_function(e, i, xi) RESULT(psi_i)
+  !==============================================
 
     IMPLICIT NONE
 
@@ -154,12 +371,12 @@ CONTAINS
 
     END SELECT
 
-  END FUNCTION basis_function_fun
-  !============================== 
+  END FUNCTION basis_function
+  !========================== 
 
-  !==================================================
-  FUNCTION gradient_ref_fun(e, i, xi) RESULT(D_psi_i)
-  !==================================================
+  !==============================================
+  FUNCTION gradient_ref(e, i, xi) RESULT(D_psi_i)
+  !==============================================
 
     IMPLICIT NONE
 
@@ -187,12 +404,12 @@ CONTAINS
 
     END SELECT    
 
-  END FUNCTION gradient_ref_fun
-  !============================
+  END FUNCTION gradient_ref
+  !========================
 
-  !==============================================
-  FUNCTION gradient_fun(e, i, xi) RESULT(D_psi_i)
-  !==============================================
+  !==========================================
+  FUNCTION gradient(e, i, xi) RESULT(D_psi_i)
+  !==========================================
   !
   ! Compute the gradient of the shape function i
   ! on the actual quadrangle at the point of baricentric
@@ -207,45 +424,28 @@ CONTAINS
     REAL(KIND=8), DIMENSION(e%N_dim) :: D_psi_i
     !-------------------------------------------
 
-    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: d
     REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: JJ, inv_J
 
     INTEGER :: k, l, m
     !---------------------------------------------
 
-    ALLOCATE( d(e%N_dim, e%N_points) )
-
-    DO m = 1, e%N_points
-       d(:, m) = e%gradient_ref(m, xi)
-    ENDDO
-
-    ! Construction of the Jacobian matrix
-    ALLOCATE( JJ(e%N_dim, e%N_dim) )
-    
-    DO k = 1, e%N_dim
-
-       DO l = 1, e%N_dim
-
-          JJ(l, k) = SUM( e%Coords(k, :) * d(l, :) )
-
-       ENDDO
-
-    ENDDO
-
+    ALLOCATE(    JJ(e%N_dim, e%N_dim) )
     ALLOCATE( inv_J(e%N_dim, e%N_dim) )
+        
+    JJ = compute_Jacobian( e, xi )
     
     inv_J = inverse(JJ)
 
-    D_Psi_i = MATMUL( inv_J, d(:, i) )
+    D_Psi_i = MATMUL( inv_J, gradient_ref(e, i, xi) )
 
-    DEALLOCATE( d, JJ, inv_J )
+    DEALLOCATE( JJ, inv_J )
+ 
+  END FUNCTION gradient
+  !====================
 
-  END FUNCTION gradient_fun
-  !========================
-
-  !========================================
-  FUNCTION rd_normal_fun(e, i) RESULT(nn_i)
-  !========================================
+  !====================================
+  FUNCTION rd_normal(e, i) RESULT(nn_i)
+  !====================================
 
     IMPLICIT NONE
 
@@ -272,12 +472,12 @@ CONTAINS
 
     END SELECT
     
-  END FUNCTION rd_normal_fun
-  !=========================  
+  END FUNCTION rd_normal
+  !=====================  
 
-  !============================================
-  SUBROUTINE gradient_trace_sub(e, if, p_D_phi)
-  !============================================
+  !========================================
+  SUBROUTINE gradient_trace(e, if, p_D_phi)
+  !========================================
   !
   ! Compute the trace of the gradients of all shape
   ! functions on the face if
@@ -298,13 +498,13 @@ CONTAINS
 
     ALLOCATE( xi_f(N_points_face, 2) )
 
-    xi_f = e%face_trace(if)    
+    xi_f = face_trace(e, if)    
 
     DO k = 1, N_points_face      
 
        DO i = 1, N_points_ele
 
-          p_D_phi(:, k, i) = e%gradient( i, xi_f(k,:) )
+          p_D_phi(:, k, i) = gradient( e, i, xi_f(k,:) )
 
        ENDDO
 
@@ -312,12 +512,12 @@ CONTAINS
     
     DEALLOCATE(xi_f)    
 
-  END SUBROUTINE gradient_trace_sub
-  !================================
+  END SUBROUTINE gradient_trace
+  !============================
 
-  !==========================================
-  FUNCTION face_trace_fun(e, if) RESULT(xi_f)
-  !==========================================
+  !======================================
+  FUNCTION face_trace(e, if) RESULT(xi_f)
+  !=======================================
   !
   ! Compute the coordinates on the face if
   !
@@ -350,8 +550,85 @@ CONTAINS
 
     END SELECT 
 
-  END FUNCTION face_trace_fun
-  !==========================
+  END FUNCTION face_trace
+  !======================
+
+  !=================================
+  FUNCTION DOFs_ref(e) RESULT(x_dof)
+  !=================================
+  !
+  ! Compute the coordinates of the DOFs
+  ! on the reference element
+  !
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+    
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: x_dof
+    !-------------------------------------------------
+     
+    SELECT CASE(e%Type)
+       
+    CASE(QUA_Q1)
+
+       ALLOCATE( x_dof(4, 2) )
+
+       x_dof = DOFs_ref_QUA_Q1(e)
+       
+    CASE(QUA_Q2)
+
+       ALLOCATE( x_dof(9, 2) )
+
+       x_dof = DOFs_ref_QUA_Q2(e)
+          
+    CASE DEFAULT
+
+       WRITE(*,*) 'Unknown Quadrangle type for DOFs'
+       STOP
+
+    END SELECT 
+
+  END FUNCTION DOFs_ref
+  !====================
+
+  !==========================================
+  FUNCTION Compute_Jacobian(e, xi) RESULT(JJ)
+  !==========================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle)                       :: e
+    REAL(KIND=8),  DIMENSION(:), INTENT(IN) :: xi
+
+    REAL(KIND=8),  DIMENSION(e%N_dim, e%N_dim) :: JJ
+    !------------------------------------------------
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: d
+
+    INTEGER :: k, l, m
+    !------------------------------------------------
+
+    ALLOCATE( d(e%N_dim, e%N_points) )
+
+    DO m = 1, e%N_points
+       d(:, m) = gradient_ref(e, m, xi)
+    ENDDO
+
+    ! Construction of the Jacobian matrix
+    DO k = 1, e%N_dim
+
+       DO l = 1, e%N_dim
+
+          JJ(l, k) = SUM( e%Coords(k, :) * d(l, :) )
+
+       ENDDO
+
+    ENDDO
+
+    DEALLOCATE( d )
+    
+  END FUNCTION Compute_Jacobian
+  !============================
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -379,18 +656,23 @@ CONTAINS
 
     REAL(KIND=8), DIMENSION(:,:,:), ALLOCATABLE :: p_D_phi
 
-    INTEGER :: id, if, i, j, k, istat
+    INTEGER :: id, if, i, j, k, N_ln, istat
     !-------------------------------------------------
 
     e%N_faces  = 4 ! # Faces
 
     ALLOCATE( e%faces(e%N_faces) )
 
+    ! # of local nodes
+    N_ln = 2
+
     ! Dofs on the faces
-    ALLOCATE( VV(2), loc(2) )
+    ALLOCATE( VV(N_ln), loc(N_ln) )
 
     ! Coordinates on the faces
-    ALLOCATE( RR(SIZE(Coords, 1), 2) )
+    ALLOCATE( RR(SIZE(Coords, 1), N_ln) )
+
+    ALLOCATE( p_D_phi(e%N_dim, N_ln, e%N_points) )
 
     DO if = 1, e%N_faces
 
@@ -409,7 +691,7 @@ CONTAINS
 
        CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
 
-       CALL e%gradient_trace(if, p_D_phi)
+       CALL gradient_trace(e, if, p_D_phi)
        
        CALL seg%face_quadrature(p_D_phi)
           
@@ -435,22 +717,28 @@ CONTAINS
     REAL(KIND=8) :: psi_i
     !-------------------------------------------
 
+    REAL(KIND=8) :: x, y
+    !-------------------------------------------
+
+    x = xi(1); y = xi(2)
+
     SELECT CASE (i)
        
     CASE(1)
 
-       psi_i = (1.d0 - xi(1))*(1.d0 - xi(2))
+       psi_i = (1.d0 - x)*(1.d0 - y)/4.d0
 
     CASE(2)
 
-       psi_i = xi(1)*(1.d0 - xi(2))
+       psi_i = (1.d0 + x)*(1.d0 - y)/4.d0
 
     CASE(3)
-       psi_i = xi(1)*xi(2)
+
+       psi_i = (1.d0 + x)*(1.d0 + y)/4.d0
        
     CASE(4)       
        
-       psi_i = (1.d0 - xi(1))*xi(2)
+       psi_i = (1.d0 - x)*(1.d0 + y)/4.d0
 
     CASE DEFAULT
 
@@ -475,38 +763,144 @@ CONTAINS
     REAL(KIND=8), DIMENSION(2) :: D_psi_i
     !-------------------------------------------
 
+    REAL(KIND=8) :: x, y
+    !-------------------------------------------
+
+    x = xi(1); y = xi(2)
+
     SELECT CASE(i)
 
     CASE(1)
 
-       D_psi_i = (/ -1.d0 + xi(2), &
-                    -1.d0 + xi(1) /)
-       
+       D_psi_i(1) = (-1.d0 + y)/4.d0
+       D_psi_i(2) = (-1.d0 + x)/4.d0
+
     CASE(2)
 
-       D_psi_i = (/ -1.d0 + xi(2), &
-                           -xi(1) /)
-       
+       D_psi_i(1) = ( 1.d0 - y)/4.d0       
+       D_psi_i(2) = (-1.d0 - x)/4.d0
+
     CASE(3)
 
-        D_psi_i = (/ xi(2), &
-                     xi(1) /)
-
+       D_psi_i(1) = ( 1.d0 + y)/4.d0       
+       D_psi_i(2) = ( 1.d0 + x)/4.d0
+ 
     CASE(4)
 
-        D_psi_i = (/       -xi(2), &
-                     1.d0 - xi(1) /)
+       D_psi_i(1) = (-1.d0 - y)/4.d0       
+       D_psi_i(2) = ( 1.d0 - x)/4.d0
 
     CASE DEFAULT
 
        WRITE(*,*) 'ERROR: not supported Dof in Quadrangle gradient'
        STOP
 
-    END SELECT
+    END SELECT  
     
   END FUNCTION gradient_ref_QUA_Q1
   !===============================  
   
+  !========================================
+  FUNCTION DOFs_ref_QUA_Q1(e) RESULT(x_dof)
+  !========================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+
+    REAL(KIND=8), DIMENSION(4,2) :: x_dof
+    !------------------------------------
+
+    x_dof(1, :) = (/ -1.d0,  -1.d0  /)
+    x_dof(2, :) = (/  1.d0,  -1.d0  /)
+    x_dof(3, :) = (/  1.d0,   1.d0  /)
+    x_dof(4, :) = (/ -1.d0,   1.d0  /)
+    
+  END FUNCTION DOFs_ref_QUA_Q1
+  !===========================
+
+  !=============================================
+  FUNCTION face_trace_QUA_Q1(e, if) RESULT(xi_f)
+  !=============================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle)        :: e
+    INTEGER,      INTENT(IN) :: if
+
+    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: xi_f
+    !------------------------------------------------
+
+    ALLOCATE( xi_f(2, 2) )
+
+    SELECT CASE(if)
+
+    CASE(1)
+
+       xi_f(1, :) = (/ 1.d0, -1.d0 /)
+       xi_f(2, :) = (/ 1.d0,  1.d0 /)
+
+    CASE(2)
+
+       xi_f(1, :) = (/  1.d0, 1.d0 /)
+       xi_f(2, :) = (/ -1.d0, 1.d0 /)
+       
+    CASE(3)
+  
+       xi_f(1, :) = (/ -1.d0,  1.d0 /)
+       xi_f(2, :) = (/ -1.d0, -1.d0 /)
+
+    CASE(4)
+  
+       xi_f(1, :) = (/ -1.d0, -1.d0 /)
+       xi_f(2, :) = (/  1.d0, -1.d0 /)
+
+    CASE DEFAULT
+
+       WRITE(*,*) 'ERROR: wrong Quadrangle face in face trace Q1'
+       STOP
+
+    END SELECT    
+    
+  END FUNCTION face_trace_QUA_Q1
+  !=============================
+
+  !===================================
+  SUBROUTINE init_quadrature_QUA_Q1(e)
+  !===================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+    !----------------------------------------------
+
+    e%N_quad = 4
+
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%D_phi_q(e%N_dim, e%N_points, e%N_quad) )
+
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 2) )
+
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+    
+    !-------------------
+    ! Quadrature formula
+    !--------------------------------------
+    e%x_q(1,:) = (/ -1.d0/DSQRT(3.d0), -1.d0/DSQRT(3.d0) /)
+    e%x_q(2,:) = (/  1.d0/DSQRT(3.d0), -1.d0/DSQRT(3.d0) /)
+    e%x_q(3,:) = (/  1.d0/DSQRT(3.d0),  1.d0/DSQRT(3.d0) /)
+    e%x_q(4,:) = (/ -1.d0/DSQRT(3.d0),  1.d0/DSQRT(3.d0) /)
+    
+    e%w_q = 1.d0
+    !--------------------------------------
+        
+    e%xx_q = 0.d0
+    
+  END SUBROUTINE init_quadrature_QUA_Q1
+  !====================================
+
   !===========================================
   FUNCTION rd_normal_QUA_Q1(e, k) RESULT(nn_k)
   !===========================================
@@ -542,51 +936,32 @@ CONTAINS
   END FUNCTION rd_normal_QUA_Q1
   !============================
 
-  !=============================================
-  FUNCTION face_trace_QUA_Q1(e, if) RESULT(xi_f)
-  !=============================================
+  !=========================================
+  SUBROUTINE init_Gradiet_Recovery_QUA_Q1(e)
+  !=========================================
 
     IMPLICIT NONE
 
-    CLASS(quadrangle)        :: e
-    INTEGER,      INTENT(IN) :: if
+    CLASS(quadrangle) :: e
+    !----------------------
 
-    REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: xi_f
-    !------------------------------------------------
+    e%N_rcv = 1
 
-    ALLOCATE( xi_f(2, 2) )
-
-    SELECT CASE(if)
-
-    CASE(1)
-
-       xi_f(1, :) = (/ 1.d0, 0.d0 /)
-       xi_f(2, :) = (/ 1.d0, 1.d0 /)
-
-    CASE(2)
-
-       xi_f(1, :) = (/ 1.d0, 1.d0 /)
-       xi_f(2, :) = (/ 0.d0, 1.d0 /)
-       
-    CASE(3)
-  
-       xi_f(1, :) = (/ 0.d0, 1.d0 /)
-       xi_f(2, :) = (/ 0.d0, 0.d0 /)
-
-    CASE(4)
-  
-       xi_f(1, :) = (/ 0.d0, 0.d0 /)
-       xi_f(2, :) = (/ 1.d0, 0.d0 /)
-
-    CASE DEFAULT
-
-       WRITE(*,*) 'ERROR: wrong Quadrangle face in face trace Q1'
-       STOP
-
-    END SELECT    
+    ALLOCATE( e%D_phi_R(e%N_dim, e%N_points, e%N_rcv) )
     
-  END FUNCTION face_trace_QUA_Q1
-  !=============================
+    ALLOCATE( e%x_R(e%N_rcv, 2) )
+
+    ALLOCATE( e%xx_R(e%N_dim, e%N_rcv) )
+
+    !----------------
+    ! Recovery points
+    !---------------------------------------------------------
+    e%x_R(1,:) = (/ 0.d0, 0.d0 /)
+   
+    e%xx_R = 0.d0
+
+  END SUBROUTINE init_Gradiet_Recovery_QUA_Q1
+  !==========================================
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !%%%%%%%%%%%%%%%%%%%%%%%%% SPECIFIC FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -614,18 +989,23 @@ CONTAINS
 
     REAL(KIND=8), DIMENSION(:,:,:), ALLOCATABLE :: p_D_phi
     
-    INTEGER :: id, if, i, j, k, istat
+    INTEGER :: id, if, i, j, k, N_ln, istat
     !-------------------------------------------------
 
     e%N_faces  = 4 ! # Faces
 
     ALLOCATE( e%faces(e%N_faces) )
 
+    ! # of local nodes
+    N_ln = 3
+
     ! Dofs on the faces
-    ALLOCATE( VV(3), loc(3) )
+    ALLOCATE( VV(N_ln), loc(N_ln) )
 
     ! Coordinates on the faces
-    ALLOCATE( RR(SIZE(Coords, 1), 3) )
+    ALLOCATE( RR(SIZE(Coords, 1), N_ln) )
+
+    ALLOCATE( p_D_phi(e%N_dim, N_ln, e%N_points) )
 
     DO if = 1, e%N_faces
 
@@ -646,7 +1026,7 @@ CONTAINS
 
        CALL seg%initialize( loc, VV, RR, NU_seg(if), n_ele(if) )
 
-       CALL e%gradient_trace(if, p_D_phi)
+       CALL gradient_trace(e, if, p_D_phi)
        
        CALL seg%face_quadrature(p_D_phi)
           
@@ -654,7 +1034,7 @@ CONTAINS
           
     ENDDO
 
-    DEALLOCATE( VV, RR, loc )
+    DEALLOCATE( VV, RR, loc, p_D_phi )
 
   END SUBROUTINE init_faces_QUA_Q2
   !===============================
@@ -672,52 +1052,50 @@ CONTAINS
     REAL(KIND=8) :: psi_i
     !-------------------------------------------
 
+    REAL(KIND=8) :: x, y, t1, t3
+    !-------------------------------------------
+
+    x = xi(1); y = xi(2)
+
+    t1 = x*x; t3 = y*y
+     
     SELECT CASE (i)
        
     CASE(1)
-
-       psi_i = (1.d0 - xi(1))*(1.d0 - 2.d0*xi(1)) * &
-               (1.d0 - xi(2))*(1.d0 - 2.d0*xi(2))
+ 
+      psi_i = (t1 - x)*(t3 - y)/4.d0
 
     CASE(2)
 
-       psi_i =      xi(1) *(2.d0*xi(1) - 1.d0) * &
-               (1 - xi(2))*(1 - 2.d0*xi(2))
+      psi_i = (t1 + x)*(t3 - y)/4.d0
 
     CASE(3)
-       
-      psi_i = xi(1) *(2.d0*xi(1) - 1.d0) * &
-              xi(2) *(2.d0*xi(2) - 1.d0)
+ 
+      psi_i = (t1 + x)*(t3 + y)/4.d0
 
     CASE(4)       
-       
-      psi_i = (1.d0 - xi(1))*(1.d0 - 2.d0*xi(1)) * &
-                      xi(2) *(2.d0*xi(2) - 1.d0)
+
+      psi_i = (t1 - x)*(t3 + y)/4.d0
 
    CASE(5)
 
-      psi_i = 4.d0*(1.d0 - xi(1))*xi(1) * &
-              (1.d0 - xi(2))*(1.d0 - 2.d0*xi(2))
+      psi_i = (-t1 + 1.d0)*(t3 - y)/2.d0
 
    CASE(6)
 
-      psi_i = xi(1) *(2.d0*xi(1) - 1.d0) * &
-              4.d0*(1.d0 - xi(2))*xi(2)
+      psi_i = (t1 + x)*(-t3 + 1.d0)/2.d0
 
    CASE(7)
 
-      psi_i = 4.d0*(1.d0 - xi(1))*xi(1) * &
-              xi(2) *(2.d0*xi(2) - 1.d0)
+      psi_i = (-t1 + 1.d0)*(t3 + y)/2.d0
 
    CASE(8)
 
-      psi_i = (1.d0 - xi(1))*(1.d0 - 2.d0*xi(1)) * &
-               4.d0*(1.d0 - xi(2))*xi(2)
-
+      psi_i = (t1 - x)*(-t3 + 1.d0)/2.d0
+      
    CASE(9)
 
-      psi_i = 4.d0*(1.d0 - xi(1))*xi(1) * &
-              4.d0*(1.d0 - xi(2))*xi(2)
+      psi_i = (-t1 + 1.d0)*(-t3 + 1.d0)
             
    CASE DEFAULT
       
@@ -742,66 +1120,94 @@ CONTAINS
     REAL(KIND=8), DIMENSION(2) :: D_psi_i
     !-------------------------------------------
 
-    REAL(KIND=8) :: x, y
+    REAL(KIND=8) :: x, y, t1, t2
     !-------------------------------------------
 
     x = xi(1); y = xi(2)
 
+    t1 = x*x; t2 = y*y
+    
     SELECT CASE(i)
 
     CASE(1)
+     
+       D_psi_i(1) = (x - 1.d0/2.d0)*(t2 - y)/2.d0
+       D_psi_i(2) = (t1 - x)*(y - 1.d0/2.d0)/2.d0
 
-       D_psi_i = (/ -3.d0 + 9.d0*y - 6.d0*y*y + 4.d0*x  - 12.d0*x*y + 8.d0*x*y*y, &
-                    -3.d0 + 4.d0*y + 9.d0*x   -12.d0*x*y - 6.d0*x*x + 8.d0*x*x*y /)
-       
+      
     CASE(2)
 
-       D_psi_i = (/ 4.d0*x - 12.d0*x*y + 8.d0*x*y*y - 1.d0 + 3.d0*y -2.d0*y*y, &
-                   -6.d0*x*x + 8.d0*x*x*y + 3.d0*x -4.d0*x*y /)
-       
+      D_psi_i(1) = (x + 1.d0/2.d0)*(t2-y)/2.d0
+      D_psi_i(2) = (t1 + x)*(y - 1.d0/2.d0)/2.d0
+             
     CASE(3)
 
-        D_psi_i = (/ 8.d0*x*y*y - 4.d0*x*y - 2.d0*y*y + y, &
-                     8.d0*x*x*y - 2.d0*x*x - 4.d0*x*y + x /)
+      D_psi_i(1) = (x + 1.d0/2.d0)*(t2 + y)/2.d0
+      D_psi_i(2) = (t1 + x)*(y + 1.d0/2.d0)/2.d0
 
     CASE(4)
 
-        D_psi_i = (/ -6.d0*y*y + 3.d0*y + 8.d0*x*y*y - 4.d0*x*y, &
-                      4.d0*y - 1.d0 - 12.d0*x*y + 3.d0*x + 8.d0*x*x*y - 2.d0*x*x /)
+      D_psi_i(1) = (x - 1.d0/2.d0)*(t2 + y)/2.d0
+      D_psi_i(2) = (t1 - x)*(y + 1.d0/2.d0)/2.d0
 
-     CASE(5)
+   CASE(5)
 
-        D_psi_i = (/ -8.d0*x + 24.d0*x*y - 16.d0*x*y*y + 4.d0 - 12.d0*y + 8.d0*y*y, &
-                    -12.d0*x + 16.d0*x*y + 12.d0*x*x - 16.d0*x*x*y /)
-     CASE(6)
+      D_psi_i(1) = -x*(t2 - y)
+      D_psi_i(2) = (-t1 + 1)*(y - 1.d0/2.d0)
 
-        D_psi_i = (/ 16.d0*x*y - 16.d0*x*y*y - 4.d0*y + 4.d0*y*y, &
-                    -16.d0*x*x*y + 8.d0*x*y + 8.d0*x*x - 4.d0*x /)
-        
-     CASE(7)
+   CASE(6)
 
-        D_psi_i = (/ -16.d0*x*y*y + 8.d0*x*y + 8.d0*y*y - 4.d0*y, &
-                      16.d0*x*y - 4.d0*x - 16.d0*x*x*y + 4.d0*x*x /)
+      D_psi_i(1) = (x + 1.d0/2.d0)*(-t2 + 1)
+      D_psi_i(2) = -(t1 + x)*y
 
-     CASE(8)
+   CASE(7)
 
-        D_psi_i = (/ -12.d0*y + 12.d0*y*y + 16.d0*x*y - 16.d0*x*y*y, &
-                     -8.d0*y + 24.d0*x*y - 16.d0*x*x*y + 4.d0 - 12.d0*x + 8.d0*x*x /)
+      D_psi_i(1) = -x*(t2 + y)
+      D_psi_i(2) = (-t1 + 1)*(y + 1.d0/2.d0)
 
-     CASE(9)
+   CASE(8)
 
-        D_psi_i = (/ -32.d0*x*y + 32.d0*x*y*y + 16.d0*y - 16.d0*y*y, &
-                     -32.d0*x*y + 32.d0*x*x*y + 16.d0*x - 16.d0*x*x /)
-        
-    CASE DEFAULT
+      D_psi_i(1) = (x - 1.d0/2.d0)*(-t2 + 1)
+      D_psi_i(2) = -(t1 - x)*y
 
+   CASE(9)
+
+      D_psi_i(1) = -2*x*(-t2 + 1)
+      D_psi_i(2) = -2*(-t1 + 1)*y
+      
+   CASE DEFAULT
+       
        WRITE(*,*) 'ERROR: not supported Dof in Quadrangle gradient'
        STOP
 
-    END SELECT
+    END SELECT  
     
   END FUNCTION gradient_ref_QUA_Q2
   !===============================
+
+  !========================================
+  FUNCTION DOFs_ref_QUA_Q2(e) RESULT(x_dof)
+  !========================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+
+    REAL(KIND=8), DIMENSION(9,2) :: x_dof
+    !------------------------------------
+
+    x_dof(1, :) = (/ -1.d0,  -1.d0  /)
+    x_dof(2, :) = (/  1.d0,  -1.d0  /)
+    x_dof(3, :) = (/  1.d0,   1.d0  /)
+    x_dof(4, :) = (/ -1.d0,   1.d0  /)
+    x_dof(5, :) = (/  0.d0,  -1.d0  /)
+    x_dof(6, :) = (/  1.d0,   0.d0  /)
+    x_dof(7, :) = (/  0.d0,   1.d0  /)
+    x_dof(8, :) = (/ -1.d0,   0.d0  /)
+    x_dof(9, :) = (/  0.d0,   0.d0  /)    
+    
+  END FUNCTION DOFs_ref_QUA_Q2
+  !===========================
 
   !===========================================
   FUNCTION rd_normal_QUA_Q2(e, k) RESULT(nn_k)
@@ -866,27 +1272,27 @@ CONTAINS
 
     CASE(1)
 
-       xi_f(1, :) = (/ 1.d0,  0.d0  /)
-       xi_f(2, :) = (/ 1.d0,  1.d0  /)
-       xi_f(3, :) = (/ 1.0d0, 0.5d0 /)
+       xi_f(1, :) = (/ 1.d0,  -1.d0 /)
+       xi_f(2, :) = (/ 1.d0,   1.d0 /)
+       xi_f(3, :) = (/ 1.0d0,  0.d0 /)
 
     CASE(2)
 
-       xi_f(1, :) = (/ 1.d0,  1.d0 /)
-       xi_f(2, :) = (/ 0.d0,  1.d0 /)
-       xi_f(3, :) = (/ 0.5d0, 1.d0 /)
+       xi_f(1, :) = (/  1.d0,  1.d0 /)
+       xi_f(2, :) = (/ -1.d0,  1.d0 /)
+       xi_f(3, :) = (/  0.d0,  1.d0 /)
 
     CASE(3)
   
-       xi_f(1, :) = (/ 0.d0,  1.d0  /)
-       xi_f(2, :) = (/ 0.d0,  0.d0  /)
-       xi_f(3, :) = (/ 0.0d0, 0.5d0 /)
+       xi_f(1, :) = (/ -1.d0,  1.d0  /)
+       xi_f(2, :) = (/ -1.d0, -1.d0  /)
+       xi_f(3, :) = (/ -1.d0,  0.0d0 /)
 
      CASE(4)
 
-       xi_f(1, :) = (/ 0.d0,  0.d0 /)
-       xi_f(2, :) = (/ 1.d0,  0.d0 /)
-       xi_f(3, :) = (/ 0.5d0, 0.d0 /)
+       xi_f(1, :) = (/ -1.d0, -1.d0 /)
+       xi_f(2, :) = (/  1.d0, -1.d0 /)
+       xi_f(3, :) = (/  0.d0, -1.d0 /)
            
     CASE DEFAULT
 
@@ -897,6 +1303,85 @@ CONTAINS
     
   END FUNCTION face_trace_QUA_Q2
   !=============================
+
+  !===================================
+  SUBROUTINE init_quadrature_QUA_Q2(e)
+  !===================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+    !----------------------------------------------
+
+    e%N_quad = 9
+
+    ALLOCATE( e%phi_q(e%N_points, e%N_quad) )
+
+    ALLOCATE( e%D_phi_q(e%N_dim, e%N_points, e%N_quad) )
+
+    ALLOCATE( e%w_q(e%N_quad   ) )
+    ALLOCATE( e%x_q(e%N_quad, 2) )
+
+    ALLOCATE( e%xx_q(e%N_dim, e%N_quad) )
+    
+    !-------------------
+    ! Quadrature formula
+    !--------------------------------------
+    e%x_q(1,:) = (/ -DSQRT(0.6d0), -DSQRT(0.6d0) /)
+    e%x_q(2,:) = (/        0.d0 ,  -DSQRT(0.6d0) /)
+    e%x_q(3,:) = (/  DSQRT(0.6d0), -DSQRT(0.6d0) /)
+    e%x_q(4,:) = (/ -DSQRT(0.6d0),         0.d0  /)
+    e%x_q(5,:) = (/        0.d0 ,          0.d0  /)
+    e%x_q(6,:) = (/  DSQRT(0.6d0),         0.d0  /)
+    e%x_q(7,:) = (/ -DSQRT(0.6d0),  DSQRT(0.6d0) /)
+    e%x_q(8,:) = (/        0.d0 ,   DSQRT(0.6d0) /)
+    e%x_q(9,:) = (/  DSQRT(0.6d0),  DSQRT(0.6d0) /)
+    
+    e%w_q(1) = 25.d0/81.d0
+    e%w_q(2) = 40.d0/81.d0
+    e%w_q(3) = 25.d0/81.d0
+    e%w_q(4) = 40.d0/81.d0
+    e%w_q(5) = 64.d0/81.d0
+    e%w_q(6) = 40.d0/81.d0
+    e%w_q(7) = 25.d0/81.d0
+    e%w_q(8) = 40.d0/81.d0
+    e%w_q(9) = 25.d0/81.d0
+    !--------------------------------------
+        
+    e%xx_q = 0.d0
+    
+  END SUBROUTINE init_quadrature_QUA_Q2
+  !====================================
+
+  !=========================================
+  SUBROUTINE init_Gradiet_Recovery_QUA_Q2(e)
+  !=========================================
+
+    IMPLICIT NONE
+
+    CLASS(quadrangle) :: e
+    !----------------------
+
+    e%N_rcv = 4
+
+    ALLOCATE( e%D_phi_R(e%N_dim, e%N_points, e%N_rcv) )
+    
+    ALLOCATE( e%x_R(e%N_rcv, 2) )
+
+    ALLOCATE( e%xx_R(e%N_dim, e%N_rcv) )
+
+    !----------------
+    ! Recovery points
+    !---------------------------------------------------------
+    e%x_R(1,:) = (/ -1.d0/DSQRT(3.d0), -1.d0/DSQRT(3.d0) /)
+    e%x_R(2,:) = (/  1.d0/DSQRT(3.d0), -1.d0/DSQRT(3.d0) /)
+    e%x_R(3,:) = (/ -1.d0/DSQRT(3.d0),  1.d0/DSQRT(3.d0) /)
+    e%x_R(4,:) = (/  1.d0/DSQRT(3.d0),  1.d0/DSQRT(3.d0) /)
+
+    e%xx_R = 0.d0
+
+  END SUBROUTINE init_Gradiet_Recovery_QUA_Q2
+  !==========================================
 
 END MODULE Quadrangle_Class
 

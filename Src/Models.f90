@@ -19,7 +19,8 @@ MODULE models
                          BOUNDARY_LAYER     = 9, &
                          PURE_DIFFUSION     = 10,&
                          ELLIPTIC_PROBLEM   = 11,&
-                         MANUFACTED_AD      = 12
+                         MANUFACTED_AD      = 12,&
+                         NISHIK_ADVEC_DIFF  = 13
    !===============================================
    
    REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
@@ -122,6 +123,11 @@ MODULE models
             a(1) = aa_mod * DSIN(theta_xi*PI/180.d0)
 	    a(2) = aa_mod * DCOS(theta_xi*PI/180.d0)
 
+         CASE(NISHIK_ADVEC_DIFF)
+     
+            a(1) = DSIN(theta_xi*PI/180.d0)
+            a(2) = DCOS(theta_xi*PI/180.d0)
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -219,6 +225,11 @@ MODULE models
             flux(1) = uu * aa_mod * DSIN(theta_xi*PI/180.d0)
 	    flux(2) = uu * aa_mod * DCOS(theta_xi*PI/180.d0)
 
+        CASE(NISHIK_ADVEC_DIFF)
+     
+            flux(1) = uu*DSIN(theta_xi*PI/180.d0)
+            flux(2) = uu*DCOS(theta_xi*PI/180.d0)
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -269,6 +280,10 @@ MODULE models
 
             flux = mu * D_uu
 
+         CASE(NISHIK_ADVEC_DIFF)
+
+            flux = mu * D_uu
+            
          CASE DEFAULT
 
 !!$            WRITE(*,*) 'Problem of unknow type.'
@@ -442,7 +457,7 @@ MODULE models
           n_loc = 0
          is_loc = 0
          b_flag = .FALSE.
-         
+
          SELECT CASE(type_pb)
       
          CASE(LINEAR_ADVECTION)
@@ -496,6 +511,10 @@ MODULE models
          CASE(MANUFACTED_AD)
 
             CALL bc_manufacted_ad()
+
+         CASE(NISHIK_ADVEC_DIFF)
+
+            CALL bc_nishik_advec_diff()
 
          CASE DEFAULT
          
@@ -664,10 +683,10 @@ CONTAINS
                is_loc(n_loc) = k
                b_flag = .TRUE.             
             ENDIF            
-         ENDDO   
+         ENDDO  
 
          DO k = 1, Nv
-            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+            IF ( (ABS(coord(1, k) - 1.d0)) < 0.d0 .AND. &
                   ABS(coord(2, k)) >  0.d0) THEN
                u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
                rhs_l(k) = 0.d0
@@ -677,7 +696,7 @@ CONTAINS
             ENDIF            
          ENDDO
          DO k = 1, Nv
-            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+            IF ( ABS(coord(2, k) - 1.d0) < 0.d0 ) THEN
                u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
                rhs_l(k) = 0.d0              
                n_loc = n_loc + 1
@@ -1061,6 +1080,58 @@ CONTAINS
        END SUBROUTINE bc_manufacted_ad
        !..............................
 
+       !................................
+       SUBROUTINE bc_nishik_advec_diff()
+       !
+       ! Square [0,1]x[0,1]
+       !
+       IMPLICIT NONE
+
+         DO k = 1, Nv
+             IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_nishik_ad(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO 
+             
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_nishik_ad(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+   
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_nishik_ad(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO        
+
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+               u_l(k) = u_ex_nishik_ad(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO 
+
+       END SUBROUTINE bc_nishik_advec_diff       
+       !..................................
+
 
    END SUBROUTINE strong_bc
    !=======================
@@ -1160,6 +1231,10 @@ CONTAINS
 
          uu_ex = u_ex_manufacted_ad(x, y)
 
+      CASE(NISHIK_ADVEC_DIFF)
+
+         uu_ex = u_ex_nishik_ad(x, y, nu)
+
       CASE DEFAULT
 
          stop
@@ -1208,6 +1283,10 @@ CONTAINS
       CASE(MANUFACTED_AD)
 
          G_uu_ex = grad_manufacted_ad(x, y)
+
+      CASE(NISHIK_ADVEC_DIFF)
+    
+         G_uu_ex = grad_nishik_ad(x, y, nu)
 
       CASE DEFAULT
 
@@ -1452,7 +1531,6 @@ CONTAINS
        REAL(KIND=8) :: f
        !--------------------------------------------
        
-
        f = 1.d0 + 0.15d0 * DSIN(PI * x) - 0.1d0 * DCOS(0.5D0 * PI * y)
        
 
@@ -1476,5 +1554,61 @@ CONTAINS
 
      END FUNCTION grad_manufacted_ad
      !===============================     
+     
+     !===========================================
+     FUNCTION u_ex_nishik_ad(x, y, nu) RESULT(f)
+     !===========================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+       REAL(KIND=8), INTENT(IN) :: nu
+
+       REAL(KIND=8) :: f
+       !--------------------------------------------
+
+       REAL(KIND=8), DIMENSION(2) :: a
+       !--------------------------------------------
+
+       a(1) = DSIN(theta_xi*PI/180.d0)
+       a(2) = DCOS(theta_xi*PI/180.d0)
+
+       f = (0.1D1 - exp(dble((x - 1) * a(1) / nu))) * &
+           (0.1D1 - exp(dble((y - 1) * a(2) / nu))) / &
+           (0.1D1 - exp(-dble(a(1) / nu))) / (0.1D1 - exp(-dble(a(2) / nu)))
+
+     END FUNCTION u_ex_nishik_ad
+     !===========================
+  
+     !===========================================
+     FUNCTION grad_nishik_ad(x, y, nu) RESULT(GG)
+     !===========================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+       REAL(KIND=8), INTENT(IN) :: nu
+
+       REAL(KIND=8), DIMENSION(2) :: GG
+       !--------------------------------------------
+
+       REAL(KIND=8), DIMENSION(2) :: a
+       !--------------------------------------------
+
+       a(1) = DSIN(theta_xi*PI/180.d0)
+       a(2) = DCOS(theta_xi*PI/180.d0)
+
+       GG(1) = -dble(a(1)) / dble(nu) * exp(dble((x - 1) * a(1) / nu)) * &
+               (0.1D1 - exp(dble((y - 1) * a(2) / nu))) / &
+               (0.1D1 - exp(-dble(a(1) / nu))) / (0.1D1 - exp(-dble(a(2) / nu)))
+                   
+       GG(2) = -(0.1D1 - exp(dble((x - 1) * a(1) / nu))) * &
+                dble(a(2)) / dble(nu) * exp(dble((y - 1) * a(2) / nu)) / &
+                (0.1D1 - exp(-dble(a(1) / nu))) / (0.1D1 - exp(-dble(a(2) / nu)))
+
+     END FUNCTION grad_nishik_ad
+     !==========================
 
 END MODULE models

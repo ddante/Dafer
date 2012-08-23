@@ -1,6 +1,10 @@
 MODULE init_problem
 
-  USE Geometry,       ONLY: N_dofs, elements,  N_elements
+  USE Geometry,       ONLY: N_dofs, elements,  N_elements, &
+                            Build_LSQ_Matrix_O2, &
+                            Build_LSQ_Matrix_O3, &
+                            Build_SPR_Matrix
+
   USE Models,         ONLY: strong_bc, detect_source, exact_solution
 
   IMPLICIT NONE
@@ -11,6 +15,7 @@ MODULE init_problem
   CHARACTER(len=64) :: pb_name
   INTEGER           :: order
   INTEGER           :: scheme_type
+  INTEGER           :: grad_recovery
   INTEGER           :: time_int
   INTEGER           :: pb_type
   INTEGER           :: ite_max
@@ -25,9 +30,10 @@ MODULE init_problem
 
   PUBLIC :: read_param, initialization
   PUBLIC :: pb_name, order, time_int,   &
-            scheme_type, pb_type,       &
-            is_visc, visc, with_source, &
-            CFL, ite_max, toll_res
+            scheme_type, grad_recovery, &
+            pb_type, is_visc, visc,     &
+            with_source, CFL, ite_max,  &
+            toll_res
   !=======================================
 
 CONTAINS
@@ -52,11 +58,26 @@ CONTAINS
       
       uu = 0.d0;  rhs = 0.d0
 
-!uu = Init_with_ExactSol()
-
       with_source = detect_source(pb_type)
 
       CALL strong_bc(pb_type, visc, uu, rhs)
+
+      IF( grad_recovery == 3 ) THEN
+
+         SELECT CASE(Order)
+         CASE(2)
+            CALL Build_LSQ_Matrix_O2
+         CASE(3)
+            CALL Build_LSQ_Matrix_O3
+         END SELECT
+
+      ELSEIF( grad_recovery == 4 ) THEN
+
+         CALL Build_SPR_Matrix(Order)
+
+      ENDIF
+
+uu = Init_with_ExactSol()
 
       ! Delete a possible previous convergence history...
       UNIT = 4
@@ -113,6 +134,7 @@ CONTAINS
     READ(unit, *) pb_name
     READ(unit, *) order
     READ(unit, *) scheme_type
+    READ(unit, *) grad_recovery
     READ(unit, *) time_int
     READ(unit, *) pb_type
     READ(unit, *) ite_max
@@ -131,6 +153,7 @@ CONTAINS
     WRITE(*,*) 'Problem name: ', pb_name
     WRITE(*,*) 'Order:', order
     WRITE(*,*) 'Num scheme:', scheme_type
+    WRITE(*,*) 'Gradient recovery:', grad_recovery
     WRITE(*,*) 'Time integration:', time_int
     WRITE(*,*) 'Problem type:', pb_type
     WRITE(*,*) 'Ite max:', ite_max

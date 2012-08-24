@@ -77,7 +77,7 @@ CONTAINS
     IF(is_visc) THEN
        Re_l = SQRT( SUM(a_m**2) ) * Lr / visc
     ELSE
-       Re_l =HUGE(1.d0)
+       Re_l = HUGE(1.d0)
     ENDIF
 
     Re_h = local_Pe(ele, u)

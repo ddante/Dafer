@@ -685,25 +685,25 @@ CONTAINS
             ENDIF            
          ENDDO  
 
-         DO k = 1, Nv
-            IF ( (ABS(coord(1, k) - 1.d0)) < 0.d0 .AND. &
-                  ABS(coord(2, k)) >  0.d0) THEN
-               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
-               rhs_l(k) = 0.d0
-               n_loc = n_loc + 1
-               is_loc(n_loc) = k
-               b_flag = .TRUE.
-            ENDIF            
-         ENDDO
-         DO k = 1, Nv
-            IF ( ABS(coord(2, k) - 1.d0) < 0.d0 ) THEN
-               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
-               rhs_l(k) = 0.d0              
-               n_loc = n_loc + 1
-               is_loc(n_loc) = k
-               b_flag = .TRUE.             
-            ENDIF            
-         ENDDO
+!!$         DO k = 1, Nv
+!!$            IF ( (ABS(coord(1, k) - 1.d0)) < 0.d0 .AND. &
+!!$                  ABS(coord(2, k)) >  0.d0) THEN
+!!$               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
+!!$               rhs_l(k) = 0.d0
+!!$               n_loc = n_loc + 1
+!!$               is_loc(n_loc) = k
+!!$               b_flag = .TRUE.
+!!$            ENDIF            
+!!$         ENDDO
+!!$         DO k = 1, Nv
+!!$            IF ( ABS(coord(2, k) - 1.d0) < 0.d0 ) THEN
+!!$               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
+!!$               rhs_l(k) = 0.d0              
+!!$               n_loc = n_loc + 1
+!!$               is_loc(n_loc) = k
+!!$               b_flag = .TRUE.             
+!!$            ENDIF            
+!!$         ENDDO
 
       END SUBROUTINE bc_linviscadv
       !...........................

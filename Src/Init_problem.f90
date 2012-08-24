@@ -63,7 +63,8 @@ CONTAINS
       CALL strong_bc(pb_type, visc, uu, rhs)
 
       IF( grad_recovery == 3 ) THEN
-
+         
+         ! Least Square
          SELECT CASE(Order)
          CASE(2)
             CALL Build_LSQ_Matrix_O2
@@ -72,12 +73,13 @@ CONTAINS
          END SELECT
 
       ELSEIF( grad_recovery == 4 ) THEN
-
+         
+         ! SPR-ZZ
          CALL Build_SPR_Matrix(Order)
 
       ENDIF
 
-uu = Init_with_ExactSol()
+!uu = Init_with_ExactSol()
 
       ! Delete a possible previous convergence history...
       UNIT = 4

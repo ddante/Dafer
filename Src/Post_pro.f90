@@ -48,7 +48,7 @@ CONTAINS
     INTEGER :: UNIT, ierror, type, jt, j, k
     !-------------------------------------------------------
 
-real(kind=8), dimension(N_dim, N_dofs) :: D_uu
+!real(kind=8), dimension(N_dim, N_dofs) :: D_uu
 
     N_tri = 0
     N_qua = 0
@@ -98,7 +98,7 @@ real(kind=8), dimension(N_dim, N_dofs) :: D_uu
 
    Glo2Loc = 0 
 
-D_uu = Compute_gradient(uu)
+!D_uu = Compute_gradient(uu)
 
    DO type = TRI, QUA
 
@@ -139,9 +139,9 @@ D_uu = Compute_gradient(uu)
 
                  uu_ex = exact_solution(pb_type, coord(:, j), visc)
 
-!!$                 WRITE(UNIT, 200) coord(:, j), uu(j), uu_ex
+                 WRITE(UNIT, 200) coord(:, j), uu(j), uu_ex
 
-WRITE(UNIT, 200) coord(:, j), D_uu(1, j), D_uu(2, j)
+!WRITE(UNIT, 200) coord(:, j), D_uu(1, j), D_uu(2, j)
               ENDIF
 
            ENDDO

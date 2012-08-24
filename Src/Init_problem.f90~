@@ -77,7 +77,7 @@ CONTAINS
 
       ENDIF
 
-!uu = Init_with_ExactSol()
+uu = Init_with_ExactSol()
 
       ! Delete a possible previous convergence history...
       UNIT = 4

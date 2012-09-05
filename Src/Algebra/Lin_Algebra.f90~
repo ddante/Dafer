@@ -152,6 +152,28 @@ CONTAINS
    END FUNCTION determinant 
    !=======================
 
+!!$   !=================================
+!!$   FUNCTION Transpose(A) RESULT(A_tr)
+!!$   !=================================
+!!$
+!!$     IMPLICIT NONE
+!!$
+!!$     REAL(KIND=8), DIMENSION(:,:), INTENT(IN) :: A
+!!$
+!!$     REAL(KIND=8), DIMENSION(SIZE(A,2),SIZE(A,1)) :: A_tr
+!!$
+!!$     INTEGER :: i, k
+!!$     !-----------------------------------
+!!$
+!!$     DO i = 1, SIZE(A, 1)
+!!$        DO k = 1, SIZE(A, 2)
+!!$           A_tr(k, i) = A(i, k)
+!!$        ENDDO
+!!$     ENDDO            
+!!$
+!!$   END FUNCTION Transpose
+!!$   !=====================
+
    !===================================
    FUNCTION Inverse_LU(A) RESULT(Inv_A)
    !===================================

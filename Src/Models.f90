@@ -20,18 +20,19 @@ MODULE models
                          PURE_DIFFUSION     = 10,&
                          ELLIPTIC_PROBLEM   = 11,&
                          MANUFACTED_AD      = 12,&
-                         NISHIK_ADVEC_DIFF  = 13
+                         NISHIK_ADVEC_DIFF  = 13,&
+                         ANISOTROP_DIFF     = 14
    !===============================================
    
    REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
    REAL(KIND=8), PARAMETER :: aa_mod = 10.0E-3
    REAL(KIND=8), PARAMETER :: theta = 100.d0
-   REAL(KIND=8), PARAMETER :: theta_xi = 30.d0
+   REAL(KIND=8), PARAMETER :: theta_xi = 0.d0
    REAL(KIND=8), PARAMETER :: mu_br = 0.01d0
    REAL(KIND=8), PARAMETER :: c_bl  = 0.059d0
    !===============================================
 
-   PUBLIC :: advection_speed, advection_flux, &
+   PUBLIC :: advection_speed, advection_flux, visc_tensor, &
              diffusion_flux, exact_solution, exact_grad, &
              strong_bc, source_term, detect_source
    !===============================================
@@ -127,6 +128,11 @@ MODULE models
      
             a(1) = DSIN(theta_xi*PI/180.d0)
             a(2) = DCOS(theta_xi*PI/180.d0)
+
+         CASE(ANISOTROP_DIFF)
+
+            a(1) = 0.d0
+            a(2) = 0.d0
 
          CASE DEFAULT
          
@@ -230,6 +236,11 @@ MODULE models
             flux(1) = uu*DSIN(theta_xi*PI/180.d0)
             flux(2) = uu*DCOS(theta_xi*PI/180.d0)
 
+         CASE(ANISOTROP_DIFF)
+
+            flux(1) = 0.d0
+            flux(2) = 0.d0
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -258,46 +269,84 @@ MODULE models
       REAL(KIND=8), DIMENSION(2) :: flux
       !------------------------------------------------
       
+      INTEGER :: id, jd
+
+      REAL(KIND=8), DIMENSION(2,2) :: KK
+      !------------------------------------------------
+
+      flux = 0.d0
+
+      KK = visc_tensor(type_pb, mu)
+
+      DO id = 1, N_dim
+         DO jd = 1, N_dim
+            flux(id) = flux(id) + KK(id, jd) * D_uu(jd)
+         ENDDO
+      ENDDO
+
+   END FUNCTION diffusion_flux
+   !==========================
+       
+   !============================================
+   FUNCTION visc_tensor(type_pb, mu)  RESULT(KK)
+   !============================================
+   !
+   ! Flux of the bidimensional problem 
+   !
+   IMPLICIT NONE
+   
+      INTEGER,      INTENT(IN) :: type_pb
+      REAL(KIND=8), INTENT(IN) :: mu
+      
+      REAL(KIND=8), DIMENSION(2,2) :: KK
+      !----------------------------------
+      
+      KK = 0.d0
+
       SELECT CASE (type_pb)
          
-         CASE(LIN_VISC_ADVEC)
+      CASE(LIN_VISC_ADVEC)
 
-            flux = mu * D_uu
+         KK(1, 1) = mu; KK(2, 2) = mu
 
-         CASE(BOUNDARY_LAYER)
+      CASE(BOUNDARY_LAYER)
 
-            flux = mu * D_uu
+         KK(1, 1) = mu; KK(2, 2) = mu
 
-         CASE(PURE_DIFFUSION)
+      CASE(PURE_DIFFUSION)
+         
+         KK(1, 1) = mu; KK(2, 2) = mu
 
-            flux = mu * D_uu
+      CASE(ELLIPTIC_PROBLEM)
 
-         CASE(ELLIPTIC_PROBLEM)
+         KK(1, 1) = 1.d0; KK(2, 2) = 1.d0
 
-            flux = D_uu
+      CASE(MANUFACTED_AD)
 
-         CASE(MANUFACTED_AD)
+         KK(1, 1) = mu; KK(2, 2) = mu
 
-            flux = mu * D_uu
+      CASE(NISHIK_ADVEC_DIFF)
 
-         CASE(NISHIK_ADVEC_DIFF)
+         KK(1, 1) = mu; KK(2, 2) = mu
 
-            flux = mu * D_uu
-            
-         CASE DEFAULT
+      CASE(ANISOTROP_DIFF)
+
+         KK(1, 1) = 1.d0; KK(2, 2) = mu
+
+      CASE DEFAULT
 
 !!$            WRITE(*,*) 'Problem of unknow type.'
 !!$            WRITE(*,*) 'STOP!'
 !!$            
 !!$            STOP
 
-            RETURN
+         RETURN
 
-      END SELECT         
+      END SELECT
 
-   END FUNCTION diffusion_flux
-   !==========================
-       
+    END FUNCTION visc_tensor       
+   !========================
+
    !====================================================
    FUNCTION source_term(type_pb, uu, mu, x, y) RESULT(S)
    !====================================================
@@ -313,8 +362,10 @@ MODULE models
 
       REAL(KIND=8), DIMENSION(2) :: aa
 
-      REAL(KIND=8) :: r, c, t1, t2, t3, t9, t13, &
-                         t14, t15, t16, t24, t25, t27
+      REAL(KIND=8) :: r, c, t1, t2, t3, t4, t5, t6, &
+                            t8, t9, t12, t13, t14, &
+                            t15, t16, t19, t21, t22, &
+                            t24, t25, t27, t33
       !------------------------------------
 
       S = 0.d0
@@ -398,7 +449,7 @@ MODULE models
               MANUFACTED_SOURCE,  &
               TRANSPORT_REACTION, &
               BOUNDARY_LAYER,     &
-              MANUFACTED_AD)
+              MANUFACTED_AD )
 
            logic = .TRUE.
 
@@ -515,6 +566,10 @@ MODULE models
          CASE(NISHIK_ADVEC_DIFF)
 
             CALL bc_nishik_advec_diff()
+
+         CASE(ANISOTROP_DIFF)
+
+            CALL bc_anisotrop_diff()
 
          CASE DEFAULT
          
@@ -685,16 +740,16 @@ CONTAINS
             ENDIF            
          ENDDO  
 
-!!$         DO k = 1, Nv
-!!$            IF ( (ABS(coord(1, k) - 1.d0)) < 0.d0 .AND. &
-!!$                  ABS(coord(2, k)) >  0.d0) THEN
-!!$               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
-!!$               rhs_l(k) = 0.d0
-!!$               n_loc = n_loc + 1
-!!$               is_loc(n_loc) = k
-!!$               b_flag = .TRUE.
-!!$            ENDIF            
-!!$         ENDDO
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF            
+         ENDDO
 !!$         DO k = 1, Nv
 !!$            IF ( ABS(coord(2, k) - 1.d0) < 0.d0 ) THEN
 !!$               u_l(k) = visc_advection(coord(1, k), coord(2, k), visc)
@@ -1132,6 +1187,57 @@ CONTAINS
        END SUBROUTINE bc_nishik_advec_diff       
        !..................................
 
+       !...............................
+       SUBROUTINE  bc_anisotrop_diff()
+       !
+       ! Square [0,1]x[0,1]
+       !
+       IMPLICIT NONE
+
+         DO k = 1, Nv
+             IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_anisotrp_diff(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO 
+             
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_anisotrp_diff(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+   
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_anisotrp_diff(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO        
+
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k) - 1.d0) <= 0.d0 ) THEN
+               u_l(k) = u_ex_anisotrp_diff(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO 
+
+       END SUBROUTINE bc_anisotrop_diff
+       !................................
 
    END SUBROUTINE strong_bc
    !=======================
@@ -1235,6 +1341,10 @@ CONTAINS
 
          uu_ex = u_ex_nishik_ad(x, y, nu)
 
+      CASE(ANISOTROP_DIFF)
+
+         uu_ex = u_ex_anisotrp_diff(x, y, nu)
+
       CASE DEFAULT
 
          stop
@@ -1287,6 +1397,10 @@ CONTAINS
       CASE(NISHIK_ADVEC_DIFF)
     
          G_uu_ex = grad_nishik_ad(x, y, nu)
+
+      CASE(ANISOTROP_DIFF)
+
+         G_uu_ex = grad_anisotrp_diff(x, y, nu)
 
       CASE DEFAULT
 
@@ -1610,5 +1724,45 @@ CONTAINS
 
      END FUNCTION grad_nishik_ad
      !==========================
+
+     !==============================================
+     FUNCTION u_ex_anisotrp_diff(x, y, nu) RESULT(f)
+     !==============================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+       REAL(KIND=8), INTENT(IN) :: nu
+
+       REAL(KIND=8) :: f
+       !--------------------------------------------
+
+       f = DSIN(2.0d0*Pi*x) * DEXP(-2.d0*Pi*DSQRT(1.d0 / nu) * y)
+
+     END FUNCTION u_ex_anisotrp_diff
+     !==============================
+
+     !===============================================
+     FUNCTION grad_anisotrp_diff(x, y, nu) RESULT(GG)
+     !===============================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+       REAL(KIND=8), INTENT(IN) :: nu
+
+       REAL(KIND=8), DIMENSION(2) :: GG
+       !--------------------------------------------     
+      
+       GG(1) = 2.d0 * DCOS(2.d0*Pi*x)*Pi * &
+               DEXP(-2.d0*Pi*DSQRT(1.d0/nu) * y)
+
+       GG(2) = -2.d0 * DSIN(2.d0*Pi*x)*Pi*DSQRT(1.d0 / nu) * &
+                  DEXP(-2.d0*Pi*DSQRT(1.d0 / nu) * y)
+
+     END FUNCTION grad_anisotrp_diff
+     !==============================     
 
 END MODULE models

@@ -2,7 +2,7 @@ MODULE Gradient_Reconstruction
 
   USE Element_class  
   USE geometry,       ONLY: N_dim, N_elements, elements, &
-                            N_dofs, inv_A, A_t
+                            N_dofs, inv_A, A_t, nn_NU
 
   USE Quadrature_rules
 
@@ -212,7 +212,7 @@ CONTAINS
 
     REAL(KIND=8) :: x_i, y_i, x_k, y_k, u_i, u_k, w_ik
 
-    INTEGER :: je, i, k, Ni, Nk
+    INTEGER :: je, i, j, k, Ni, Nk
     !-------------------------------------------
 
     ALLOCATE( b(N_dofs) )
@@ -233,41 +233,48 @@ CONTAINS
 
           Ni = Nu(i)
 
-          DO k = i, ele%N_points
+          DO k = 1, ele%N_points
 
              Nk = Nu(k)
 
              IF( k == i ) CYCLE
 
-             x_i = ele%Coords(1, i)
-             y_i = ele%Coords(2, i)
-          
-             x_k = ele%Coords(1, k)
-             y_k = ele%Coords(2, k)
+             DO j = 1, SIZE(nn_NU(Ni)%con)
 
-             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+                IF( Nk == nn_NU(Ni)%con(j) ) THEN
 
-             u_i = uu(Ni)
-             u_k = uu(Nk)
+                   nn_NU(Ni)%con(j) = -nn_NU(Ni)%con(j)
 
-             ! b --> i
-             b(Ni)%v(1) = b(Ni)%v(1) + 2.d0*w_ik*(x_k - x_i)*(u_k - u_i)
-             b(Ni)%v(2) = b(Ni)%v(2) + 2.d0*w_ik*(y_k - y_i)*(u_k - u_i)
+                   x_i = ele%Coords(1, i)
+                   y_i = ele%Coords(2, i)
 
-             ! b --> k
-             b(Nk)%v(1) = b(Nk)%v(1) + 2.d0*w_ik*(x_i - x_k)*(u_i - u_k)
-             b(Nk)%v(2) = b(Nk)%v(2) + 2.d0*w_ik*(y_i - y_k)*(u_i - u_k)
-          
+                   x_k = ele%Coords(1, k)
+                   y_k = ele%Coords(2, k)
+
+                   w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+
+                   u_i = uu(Ni)
+                   u_k = uu(Nk)
+
+                   ! b --> i
+                   b(Ni)%v(1) = b(Ni)%v(1) + 2.d0*w_ik*(x_k - x_i)*(u_k - u_i)
+                   b(Ni)%v(2) = b(Ni)%v(2) + 2.d0*w_ik*(y_k - y_i)*(u_k - u_i)          
+
+                ENDIF
+
+             ENDDO
+
           ENDDO
-
-       ENDDO
       
+       ENDDO
+
        DEALLOCATE(Nu)
 
     ENDDO
 
     DO i = 1, N_dofs      
        D_uu(:, i) = MATMUL(inv_A(i)%MM, b(i)%v)
+       nn_NU(i)%con = -nn_NU(i)%con
     ENDDO
 
     DEALLOCATE( b )
@@ -300,7 +307,7 @@ CONTAINS
 
     REAL(KIND=8) :: x_i, y_i, x_k, y_k, u_i, u_k, w_ik
 
-    INTEGER :: je, i, k, Ni, Nk
+    INTEGER :: je, i, j, k, Ni, Nk
     !-------------------------------------------
 
     ALLOCATE( b(N_dofs) )
@@ -321,38 +328,40 @@ CONTAINS
 
           Ni = Nu(i)
 
-          DO k = i, ele%N_points
+          DO k = 1, ele%N_points
 
              Nk = Nu(k)
 
              IF( k == i ) CYCLE
 
-             x_i = ele%Coords(1, i)
-             y_i = ele%Coords(2, i)
-          
-             x_k = ele%Coords(1, k)
-             y_k = ele%Coords(2, k)
+             DO j = 1, SIZE(nn_NU(Ni)%con)
 
-             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+                IF( Nk == nn_NU(Ni)%con(j) ) THEN
 
-             u_i = uu(Ni)
-             u_k = uu(Nk)
+                   nn_NU(Ni)%con(j) = -nn_NU(Ni)%con(j)
 
-             ! b --> i
-             b(Ni)%v(1) = b(Ni)%v(1) + 2.d0*w_ik*(u_k - u_i)*(x_k - x_i)
-             b(Ni)%v(2) = b(Ni)%v(2) + 2.d0*w_ik*(u_k - u_i)*(y_k - y_i)
-             b(Ni)%v(3) = b(Ni)%v(3) +      w_ik*(u_k - u_i)*(x_k - x_i)**2
-             b(Ni)%v(4) = b(Ni)%v(4) +      w_ik*(u_k - u_i)*(y_k - y_i)**2
-             b(Ni)%v(5) = b(Ni)%v(5) + 2.d0*w_ik*(u_k - u_i)*(x_k - x_i)*(y_k - y_i)
+                   x_i = ele%Coords(1, i)
+                   y_i = ele%Coords(2, i)
 
-             ! b --> k
-             b(Nk)%v(1) = b(Nk)%v(1) + 2.d0*w_ik*(u_i - u_k)*(x_i - x_k)
-             b(Nk)%v(2) = b(Nk)%v(2) + 2.d0*w_ik*(u_i - u_k)*(y_i - y_k)
-             b(Nk)%v(3) = b(Nk)%v(3) +      w_ik*(u_i - u_k)*(x_i - x_k)**2
-             b(Nk)%v(4) = b(Nk)%v(4) +      w_ik*(u_i - u_k)*(y_i - y_k)**2
-             b(Nk)%v(5) = b(Nk)%v(5) + 2.d0*w_ik*(u_i - u_k)*(x_i - x_k)*(y_i - y_k)
+                   x_k = ele%Coords(1, k)
+                   y_k = ele%Coords(2, k)
 
-          
+                   w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+
+                   u_i = uu(Ni)
+                   u_k = uu(Nk)
+
+                   ! b --> i
+                   b(Ni)%v(1) = b(Ni)%v(1) + 2.d0*w_ik*(u_k - u_i)*(x_k - x_i)
+                   b(Ni)%v(2) = b(Ni)%v(2) + 2.d0*w_ik*(u_k - u_i)*(y_k - y_i)
+                   b(Ni)%v(3) = b(Ni)%v(3) +      w_ik*(u_k - u_i)*(x_k - x_i)**2
+                   b(Ni)%v(4) = b(Ni)%v(4) +      w_ik*(u_k - u_i)*(y_k - y_i)**2
+                   b(Ni)%v(5) = b(Ni)%v(5) + 2.d0*w_ik*(u_k - u_i)*(x_k - x_i)*(y_k - y_i)
+
+                ENDIF
+
+             ENDDO
+
           ENDDO
 
        ENDDO
@@ -366,6 +375,8 @@ CONTAINS
        x_v = MATMUL(inv_A(i)%MM, b(i)%v)
 
        D_uu(:, i) = x_v(1:2)
+
+       nn_NU(i)%con = -nn_NU(i)%con
 
     ENDDO
 

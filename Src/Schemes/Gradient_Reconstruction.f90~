@@ -2,7 +2,7 @@ MODULE Gradient_Reconstruction
 
   USE Element_class  
   USE geometry,       ONLY: N_dim, N_elements, elements, &
-                            N_dofs, inv_A, A_t
+                            N_dofs, inv_A, A_t, nn_NU
 
   USE Quadrature_rules
 
@@ -212,7 +212,7 @@ CONTAINS
 
     REAL(KIND=8) :: x_i, y_i, x_k, y_k, u_i, u_k, w_ik
 
-    INTEGER :: je, i, k, Ni, Nk
+    INTEGER :: je, i, j, k, Ni, Nk
     !-------------------------------------------
 
     ALLOCATE( b(N_dofs) )
@@ -233,41 +233,48 @@ CONTAINS
 
           Ni = Nu(i)
 
-          DO k = i, ele%N_points
+          DO k = 1, ele%N_points
 
              Nk = Nu(k)
 
              IF( k == i ) CYCLE
 
-             x_i = ele%Coords(1, i)
-             y_i = ele%Coords(2, i)
-          
-             x_k = ele%Coords(1, k)
-             y_k = ele%Coords(2, k)
+             DO j = 1, SIZE(nn_NU(Ni)%con)
 
-             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+                IF( Nk == nn_NU(Ni)%con(j) ) THEN
 
-             u_i = uu(Ni)
-             u_k = uu(Nk)
+                   nn_NU(Ni)%con(j) = -nn_NU(Ni)%con(j)
 
-             ! b --> i
-             b(Ni)%v(1) = b(Ni)%v(1) + 2.d0*w_ik*(x_k - x_i)*(u_k - u_i)
-             b(Ni)%v(2) = b(Ni)%v(2) + 2.d0*w_ik*(y_k - y_i)*(u_k - u_i)
+                   x_i = ele%Coords(1, i)
+                   y_i = ele%Coords(2, i)
 
-             ! b --> k
-             b(Nk)%v(1) = b(Nk)%v(1) + 2.d0*w_ik*(x_i - x_k)*(u_i - u_k)
-             b(Nk)%v(2) = b(Nk)%v(2) + 2.d0*w_ik*(y_i - y_k)*(u_i - u_k)
-          
+                   x_k = ele%Coords(1, k)
+                   y_k = ele%Coords(2, k)
+
+                   w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+
+                   u_i = uu(Ni)
+                   u_k = uu(Nk)
+
+                   ! b --> i
+                   b(Ni)%v(1) = b(Ni)%v(1) + 2.d0*w_ik*(x_k - x_i)*(u_k - u_i)
+                   b(Ni)%v(2) = b(Ni)%v(2) + 2.d0*w_ik*(y_k - y_i)*(u_k - u_i)          
+
+                ENDIF
+
+             ENDDO
+
           ENDDO
-
-       ENDDO
       
+       ENDDO
+
        DEALLOCATE(Nu)
 
     ENDDO
 
     DO i = 1, N_dofs      
        D_uu(:, i) = MATMUL(inv_A(i)%MM, b(i)%v)
+       nn_NU(i)%con = -nn_NU(i)%con
     ENDDO
 
     DEALLOCATE( b )
@@ -377,7 +384,11 @@ CONTAINS
   !=======================================
   FUNCTION SPRZZ_gradient(uu) RESULT(D_uu)
   !=======================================
-
+  ! 
+  ! WARNING: there is a problem in the case
+  !          of a triangle with all the vertices
+  !          wich belong to the boundaies
+  !
     IMPLICIT NONE
 
     REAL(KIND=8), DIMENSION(:),   INTENT(IN)  :: uu
@@ -424,7 +435,9 @@ CONTAINS
     ALLOCATE( Nk(SIZE(A_t)) )
     Nk = 0
 
-    ! Construction of the RHS terms for each mesh vertex
+    ! Construction of the RHS terms
+    ! for each mesh vertex
+    !--------------------------------
     DO je = 1, N_elements
 
        ele = elements(je)%p
@@ -448,11 +461,13 @@ CONTAINS
        ENDDO
 
     ENDDO
+    !--------------------------------
 
     DEALLOCATE(Nk)
 
-    ! Polynomial coeff. for the recovered gradient 
-    ! at each mesh vertex
+    ! Polynomial coeff. for the recoverd
+    ! gradient at each mesh vertex
+    !--------------------------------
     DO i = 1, SIZE(b)
        
        ALLOCATE( rhs(SIZE(A_t(i)%MM, 1)) )
@@ -470,15 +485,22 @@ CONTAINS
        DEALLOCATE( rhs )
        
     ENDDO
+    !--------------------------------
+
+    !/////////////////////////////////////////
+    !// For the other DOFs the gradient     //
+    !// is computed extrapolating the value //
+    !// from the vertces                    //
+    !/////////////////////////////////////////
     
-    ! For the boundary nodes the gradient is computed
-    ! extrapolating the value from the interior nodes   
+    ! Dofs on the faces
     DO je = 1, N_elements
        
        ele = elements(je)%p
 
        DO j = 1, ele%N_faces
-
+          
+          ! boundary nodes
           IF( ele%faces(j)%f%c_ele == 0 ) THEN
 
              DO k = 1, ele%faces(j)%f%N_points
@@ -487,7 +509,8 @@ CONTAINS
 
                 x_k = ele%faces(j)%f%Coords(1, k)
                 y_k = ele%faces(j)%f%Coords(2, k)
-
+                
+                ! *** Find the domain vertex ***
                 DO i = 1, ele%N_verts
 
                    n = 0
@@ -515,7 +538,7 @@ CONTAINS
                    ENDIF
 
                 ENDDO
-
+                ! *** done ***
                 
                 SELECT CASE(Order) 
 
@@ -557,9 +580,11 @@ CONTAINS
                 END SELECT
                    
              ENDDO
-
+             
+          ! Internal nodes
           ELSEIF( ele%faces(j)%f%c_ele /=0 .AND. Order > 2 ) THEN
 
+             
              DO k = ele%faces(j)%f%N_Verts+1, ele%faces(j)%f%N_points
 
                 Nu_b = ele%faces(j)%f%Nu(k)
@@ -567,6 +592,7 @@ CONTAINS
                 x_k = ele%faces(j)%f%Coords(1, k)
                 y_k = ele%faces(j)%f%Coords(2, k)
 
+                ! *** Find the domain vertex ***
                 DO i = 1, ele%faces(j)%f%N_Verts
 
                    n = 0
@@ -594,6 +620,7 @@ CONTAINS
                    ENDIF
 
                 ENDDO
+                ! *** done ***
 
                 D_uu(1, Nu_b) = &
                      ss(Nu_i)%v(1, 1) + &
@@ -625,6 +652,7 @@ CONTAINS
                 x_k = ele%Coords(1, k)
                 y_k = ele%Coords(2, k)
 
+                ! *** Find the domain vertex ***
                 DO i = 1, ele%N_verts
 
                    n = 0
@@ -652,6 +680,7 @@ CONTAINS
                    ENDIF
 
                 ENDDO
+                ! *** done ***
 
                 D_uu(1, ele%NU(k)) = &
                      ss(Nu_i)%v(1, 1) + &

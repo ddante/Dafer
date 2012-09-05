@@ -226,10 +226,6 @@ CONTAINS
     ENDDO
 
     Phi_b = oInt_n(ele, ff_a - ff_v)
-
-!!$    IF( PRESENT(D_u) ) THEN
-!!$       Phi_b = Phi_b - DG_Visc_Res(ele, u)
-!!$    ENDIF
     
     IF( with_source ) THEN
        Source = Int_d(ele, SS)
@@ -243,63 +239,63 @@ CONTAINS
   END FUNCTION total_residual
   !==========================
 
-  !=========================================
-  FUNCTION DG_Visc_Res(ele, u) RESULT(Phi_v)
-  !=========================================
-
-    IMPLICIT NONE
-
-    TYPE(element),                INTENT(IN) :: ele
-    REAL(KIND=8), DIMENSION(:),   INTENT(IN) :: u
-    
-    REAL(KIND=8) :: Phi_v
-    !-----------------------------------------------
-
-    INTEGER,                      POINTER :: N_quad
-    REAL(KIND=8), DIMENSION(:,:), POINTER :: n_m
-    REAL(KIND=8), DIMENSION(:),   POINTER :: w
-    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_1_q
-    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_2_q
-    !-----------------------------------------------
-
-    REAL(KIND=8), DIMENSION(N_dim) :: G_mean
-
-    REAL(KIND=8) :: G_jump, eta
-
-    INTEGER :: jf, iq
-    !-----------------------------------------------
-
-    Phi_v = 0.d0
-
-    eta = 0.0d0
-
-    DO jf = 1, ele%N_faces
-
-       N_quad    => ele%faces(jf)%f%N_quad
-       n_m       => ele%faces(jf)%f%n_q
-       w         => ele%faces(jf)%f%w_q
-       p_Du_1_q  => ele%faces(jf)%f%p_Du_1_q
-       p_Du_2_q  => ele%faces(jf)%f%p_Du_2_q
-
-       DO iq = 1, N_quad
-          
-          G_mean = 0.5d0*(p_Du_1_q(:, iq) + p_Du_2_q(:, iq))
-
-          G_jump = DOT_PRODUCT( p_Du_1_q(:, iq),  n_m(:, iq) ) + &
-                   DOT_PRODUCT( p_Du_2_q(:, iq), -n_m(:, iq) )
-
-          Phi_v = Phi_v +  w(iq) * &
-                   visc * ( DOT_PRODUCT(G_mean, n_m(:, iq)) - &
-                            G_jump ) 
-
-       ENDDO
-
-       NULLIFY( N_quad, n_m, w, p_Du_1_q, p_Du_2_q )
-
-    ENDDO
-
-  END FUNCTION DG_Visc_Res
-  !=======================  
+!!$  !=========================================
+!!$  FUNCTION DG_Visc_Res(ele, u) RESULT(Phi_v)
+!!$  !=========================================
+!!$
+!!$    IMPLICIT NONE
+!!$
+!!$    TYPE(element),                INTENT(IN) :: ele
+!!$    REAL(KIND=8), DIMENSION(:),   INTENT(IN) :: u
+!!$    
+!!$    REAL(KIND=8) :: Phi_v
+!!$    !-----------------------------------------------
+!!$
+!!$    INTEGER,                      POINTER :: N_quad
+!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: n_m
+!!$    REAL(KIND=8), DIMENSION(:),   POINTER :: w
+!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_1_q
+!!$    REAL(KIND=8), DIMENSION(:,:), POINTER :: p_Du_2_q
+!!$    !-----------------------------------------------
+!!$
+!!$    REAL(KIND=8), DIMENSION(N_dim) :: G_mean
+!!$
+!!$    REAL(KIND=8) :: G_jump, eta
+!!$
+!!$    INTEGER :: jf, iq
+!!$    !-----------------------------------------------
+!!$
+!!$    Phi_v = 0.d0
+!!$
+!!$    eta = 0.0d0
+!!$
+!!$    DO jf = 1, ele%N_faces
+!!$
+!!$       N_quad    => ele%faces(jf)%f%N_quad
+!!$       n_m       => ele%faces(jf)%f%n_q
+!!$       w         => ele%faces(jf)%f%w_q
+!!$       p_Du_1_q  => ele%faces(jf)%f%p_Du_1_q
+!!$       p_Du_2_q  => ele%faces(jf)%f%p_Du_2_q
+!!$
+!!$       DO iq = 1, N_quad
+!!$          
+!!$          G_mean = 0.5d0*(p_Du_1_q(:, iq) + p_Du_2_q(:, iq))
+!!$
+!!$          G_jump = DOT_PRODUCT( p_Du_1_q(:, iq),  n_m(:, iq) ) + &
+!!$                   DOT_PRODUCT( p_Du_2_q(:, iq), -n_m(:, iq) )
+!!$
+!!$          Phi_v = Phi_v +  w(iq) * &
+!!$                   visc * ( DOT_PRODUCT(G_mean, n_m(:, iq)) - &
+!!$                            G_jump ) 
+!!$
+!!$       ENDDO
+!!$
+!!$       NULLIFY( N_quad, n_m, w, p_Du_1_q, p_Du_2_q )
+!!$
+!!$    ENDDO
+!!$
+!!$  END FUNCTION DG_Visc_Res
+!!$  !=======================  
 
 !!$  !=================================================
 !!$  FUNCTION Penalization_flux(ele, u) RESULT(Phi_pen)

@@ -3,7 +3,7 @@ MODULE LW_method
   USE Element_class
   USE geometry,         ONLY: N_dim, elements
   USE init_problem,     ONLY: pb_type
-  USE models,           ONLY: advection_speed, source_term
+  USE models,           ONLY: advection_speed, source_term, visc_tensor
   USE init_problem,     ONLY: is_visc, visc, order
   USE Quadrature_rules, ONLY: int_d_G
 
@@ -27,12 +27,14 @@ CONTAINS
     REAL(KIND=8), DIMENSION(:),   INTENT(OUT) :: Phi_i
     REAL(KIND=8),                 INTENT(OUT) :: inv_dt
     !--------------------------------------------------
-    INTEGER :: Ns, j, iq, i, id, k
+    INTEGER :: Ns, j, iq, i, id, jd, k
 
     REAL(KIND=8) :: u_m, x_m, y_m, s_i, s_q, &
                     N_m, mod_am, T_par, K_plus
 
     REAL(KIND=8), DIMENSION(N_dim) :: a_m, int_G_i, a_i, a_q
+
+    REAL(KIND=8), DIMENSION(N_dim, N_dim) :: KK_v
 
     REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: D_muD_phi_q
 
@@ -116,28 +118,34 @@ CONTAINS
     D_phi_q => ele%D_phi_q
     D_phi_k => ele%D_phi_k
       phi_q => ele%phi_q
-
+      
+    KK_v = visc_tensor(pb_type, visc)
 
     DO iq = 1, ele%N_quad
 
        !------------------------
        ! Div( mu * Grad(Phi_i) )
        !-----------------------------------------------
-       D_muD_phi_q = 0.d0       
+       D_muD_phi_q = 0.d0 
+
        DO i = 1, Ns
 
           DO id = 1, N_dim
 
-             DO k = 1, Ns
-                D_muD_phi_q(i) = D_muD_phi_q(i) +         &
-                                 visc*D_phi_k(id, i, k) * &
-                                 D_phi_q(id, k, iq)
+             DO jd = 1, N_dim
+
+                DO k = 1, Ns
+                   D_muD_phi_q(i) = D_muD_phi_q(i) +                 &
+                                    KK_v(id, jd)*D_phi_k(jd, i, k) * & 
+                                                 D_phi_q(id, k, iq)
+
+                ENDDO
 
              ENDDO
 
           ENDDO
 
-       ENDDO     
+       ENDDO
        !-------------------------------------------------
 
        Dr_u_q = 0.d0 ! Reconstructed gradient      
@@ -166,8 +174,8 @@ CONTAINS
 
           D_muD_u_q = D_muD_u_q + D_muD_phi_q(i) * u(i)
 
-          D_muDr_u_q = D_muDr_u_q + D_phi_q(1, i, iq) * visc*D_u(1, i) + &
-                                    D_phi_q(2, i, iq) * visc*D_u(2, i)
+!          D_muDr_u_q = D_muDr_u_q + D_phi_q(1, i, iq) * visc*D_u(1, i) + &
+!                                    D_phi_q(2, i, iq) * visc*D_u(2, i)
 
        ENDDO
 
@@ -188,9 +196,16 @@ CONTAINS
           ! Viscous part
           !--------------------------------------------------------
           IF(is_visc) THEN
-             
+
+             a_i = 0.d0
+             DO id = 1, N_dim
+                DO jd = 1, N_dim
+                   a_i(id) = a_i(id) + KK_V(id, jd)*D_phi_q(jd, i, iq)
+                ENDDO
+             ENDDO
+
              phi_i(i) = phi_i(i) + (1.d0 - xi_Re)*&
-                        visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
+                        DOT_PRODUCT(a_i, (D_u_q - Dr_u_q)) * w(iq) 
 
           ENDIF
  

@@ -22,6 +22,11 @@ MODULE geometry
   TYPE(elements_ptr), DIMENSION(:), ALLOCATABLE :: elements
   !----------------------------------------------------------
 
+  TYPE :: con_Nu
+     INTEGER, DIMENSION(:), ALLOCATABLE :: con
+  END TYPE con_Nu
+  TYPE(con_NU), DIMENSION(:), ALLOCATABLE :: nn_Nu
+
   TYPE :: matrix
      REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: MM
   END TYPE matrix
@@ -48,7 +53,7 @@ MODULE geometry
 
   PUBLIC :: read_gmshMesh, read_MeshFBx, Init_Elements
   PUBLIC :: Build_LSQ_Matrix_O2, Build_LSQ_Matrix_O3, Build_SPR_Matrix
-  PUBLIC :: N_dim, N_dofs, N_elements, elements, inv_A, A_t
+  PUBLIC :: N_dim, N_dofs, N_elements, elements, inv_A, A_t, nn_NU
   !==========================================================
 
 CONTAINS
@@ -837,11 +842,16 @@ CONTAINS
     TYPE(element) :: ele
 
     TYPE(matrix), DIMENSION(:), ALLOCATABLE :: A
-    INTEGER, DIMENSION(:), ALLOCATABLE :: Nu
+
+    INTEGER, DIMENSION(:), POINTER :: Nu
+   
+    INTEGER, DIMENSION(:),  ALLOCATABLE :: temp
+
+    LOGICAL :: find
 
     REAL(KIND=8) :: x_i, y_i, x_k, y_k, w_ik
 
-    INTEGER :: je, i, k, Ni, Nk
+    INTEGER :: je, i, k, j, Ni, Nk, Ns, n
     !----------------------------------------
 
     ALLOCATE( A(N_dofs) )
@@ -850,51 +860,111 @@ CONTAINS
        A(i)%MM = 0.d0
     ENDDO
 
+    ALLOCATE( nn_Nu(N_dofs) )
+
+    ! Node-to-bouble connectivity
+    !--------------------------------------------------------
+    DO je = 1, N_elements
+
+       Ns =  elements(je)%p%N_points
+       Nu => elements(je)%p%Nu
+
+       DO i = 1, Ns
+
+          IF( .NOT. ALLOCATED(nn_Nu(Nu(i))%con) ) THEN
+
+             ALLOCATE(nn_Nu(Nu(i))%con(Ns))
+
+             nn_Nu(Nu(i))%con = Nu
+
+          ELSE
+
+             DO k = 1, Ns
+
+                n = SIZE(nn_Nu(Nu(i))%con)
+
+                find = .FALSE.
+
+                DO j = 1, n
+
+                   IF(nn_Nu(Nu(i))%con(j) == Nu(k)) THEN
+                      find = .TRUE.
+                      EXIT
+                   ENDIF
+
+                ENDDO
+
+                IF(.NOT. find) THEN
+
+                   ALLOCATE( temp(SIZE(nn_Nu(Nu(i))%con)) )
+                   temp = nn_Nu(Nu(i))%con
+
+                   DEALLOCATE( nn_Nu(Nu(i))%con )
+                     ALLOCATE( nn_Nu(Nu(i))%con(SIZE(temp)+1) )
+
+                   nn_Nu(Nu(i))%con = (/ temp, Nu(k) /)
+
+                   DEALLOCATE(temp)                      
+
+                ENDIF
+
+             ENDDO ! k <= #N_points
+
+          ENDIF ! Not allocated
+
+       ENDDO ! i <= #N_points
+
+    ENDDO ! je <= #elements
+    !--------------------------------------------------------
+
+
+    ! Construct the matrices of the least-square
+    ! method, for each DOF
+    !---------------------------------------------
     DO je = 1, N_elements
 
        ele = elements(je)%p
 
-       ALLOCATE( NU(ele%N_points) )
-
-       Nu = ele%NU
-
        DO i = 1, ele%N_points
+
+          Ni = ele%NU(i)
           
-          Ni = Nu(i)
+          DO k = 1, ele%N_points
 
-          DO k = i, ele%N_points
-
-             Nk = Nu(k)
+             Nk = ele%NU(k)
 
              IF( k == i ) CYCLE
 
-             x_i = ele%Coords(1, i)
-             y_i = ele%Coords(2, i)
-          
-             x_k = ele%Coords(1, k)
-             y_k = ele%Coords(2, k)
+             DO j = 1, SIZE(nn_NU(Ni)%con)
 
-             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+                IF( Nk == nn_NU(Ni)%con(j) ) THEN
 
-             ! A --> Ni
-             A(Ni)%MM(1,1) = A(Ni)%MM(1,1) + 2.d0*w_ik*(x_k - x_i)**2
-             A(Ni)%MM(2,2) = A(Ni)%MM(2,2) + 2.d0*w_ik*(y_k - y_i)**2
-             A(Ni)%MM(1,2) = A(Ni)%MM(1,2) + 2.d0*w_ik*(x_k - x_i)*(y_k - y_i)
-             A(Ni)%MM(2,1) = A(Ni)%MM(1,2)
+                   nn_NU(Ni)%con(j) = -nn_NU(Ni)%con(j)
 
-             ! A --> Nk
-             A(Nk)%MM(1,1) = A(Nk)%MM(1,1) + 2.d0*w_ik*(x_i - x_k)**2
-             A(Nk)%MM(2,2) = A(Nk)%MM(2,2) + 2.d0*w_ik*(y_i - y_k)**2
-             A(Nk)%MM(1,2) = A(Nk)%MM(1,2) + 2.d0*w_ik*(x_i - x_k)*(y_i - y_k)
-             A(Nk)%MM(2,1) = A(Nk)%MM(1,2)
+                   x_i = ele%Coords(1, i)
+                   y_i = ele%Coords(2, i)
 
-          ENDDO
+                   x_k = ele%Coords(1, k)
+                   y_k = ele%Coords(2, k)
 
-       ENDDO
-       
-       DEALLOCATE(Nu)
+                   w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
 
-    ENDDO
+                   ! A --> Ni
+                   A(Ni)%MM(1,1) = A(Ni)%MM(1,1) + 2.d0*w_ik*(x_k - x_i)**2
+                   A(Ni)%MM(2,2) = A(Ni)%MM(2,2) + 2.d0*w_ik*(y_k - y_i)**2
+                   A(Ni)%MM(1,2) = A(Ni)%MM(1,2) + 2.d0*w_ik*(x_k - x_i)*(y_k - y_i)
+                   A(Ni)%MM(2,1) = A(Ni)%MM(1,2)              
+
+                ENDIF
+                
+             ENDDO ! j <= #Con
+
+          ENDDO ! k <= #N_points
+
+       ENDDO ! i <= #N_points
+
+    ENDDO ! je <= #elements
+    !---------------------------------------------
 
     ALLOCATE( inv_A(N_dofs) )
 
@@ -903,6 +973,8 @@ CONTAINS
        ALLOCATE( inv_A(i)%MM(2,2) )
 
        inv_A(i)%MM = inverse( A(i)%MM )
+
+       nn_NU(i)%con = -nn_NU(i)%con
 
     ENDDO
 
@@ -921,11 +993,15 @@ CONTAINS
 
     TYPE(matrix), DIMENSION(:), ALLOCATABLE :: A
 
-    INTEGER, DIMENSION(:), ALLOCATABLE :: Nu
+    INTEGER, DIMENSION(:), POINTER :: Nu
+
+    INTEGER, DIMENSION(:),  ALLOCATABLE :: temp
+
+    LOGICAL :: find
 
     REAL(KIND=8) :: x_i, y_i, x_k, y_k, w_ik
 
-    INTEGER :: je, i, k, l, jf, Ni, Nk
+    INTEGER :: je, i, k, j,  Ni, Nk, Ns, n
     !----------------------------------------
 
     ALLOCATE( A(N_dofs) )
@@ -934,139 +1010,155 @@ CONTAINS
        A(i)%MM = 0.d0
     ENDDO
 
+    ALLOCATE( nn_Nu(N_dofs) )
+
+    ! Node-to-bouble connectivity
+    !--------------------------------------------------------
+    DO je = 1, N_elements
+
+       Ns =  elements(je)%p%N_points
+       Nu => elements(je)%p%Nu
+
+       DO i = 1, Ns
+
+          IF( .NOT. ALLOCATED(nn_Nu(Nu(i))%con) ) THEN
+
+             ALLOCATE(nn_Nu(Nu(i))%con(Ns))
+
+             nn_Nu(Nu(i))%con = Nu
+
+          ELSE
+
+             DO k = 1, Ns
+
+                n = SIZE(nn_Nu(Nu(i))%con)
+
+                find = .FALSE.
+
+                DO j = 1, n
+
+                   IF(nn_Nu(Nu(i))%con(j) == Nu(k)) THEN
+                      find = .TRUE.
+                      EXIT
+                   ENDIF
+
+                ENDDO
+
+                IF(.NOT. find) THEN
+
+                   ALLOCATE( temp(SIZE(nn_Nu(Nu(i))%con)) )
+                   temp = nn_Nu(Nu(i))%con
+
+                   DEALLOCATE( nn_Nu(Nu(i))%con )
+                     ALLOCATE( nn_Nu(Nu(i))%con(SIZE(temp)+1) )
+
+                   nn_Nu(Nu(i))%con = (/ temp, Nu(k) /)
+
+                   DEALLOCATE(temp)                      
+
+                ENDIF
+
+             ENDDO ! k <= #N_points
+
+          ENDIF ! Not allocated
+
+       ENDDO ! i <= #N_points
+
+    ENDDO ! je <= #elements
+    !--------------------------------------------------------
+    
+    
+    ! Construct the matrices of the least-square
+    ! method, for each DOF
+    !---------------------------------------------
     DO je = 1, N_elements
 
        ele = elements(je)%p
 
-       ALLOCATE( NU(ele%N_points) )
-
-       Nu = ele%NU
-
        DO i = 1, ele%N_points
 
-          Ni = Nu(i)
+          Ni = ele%NU(i)
 
-          DO k = i, ele%N_points
-            
+          DO k = 1, ele%N_points
+
+             Nk = ele%NU(k)
+
              IF( k == i ) CYCLE
 
-             Nk = Nu(k)
+             DO j = 1, SIZE(nn_NU(Ni)%con)
 
-             x_i = ele%Coords(1, i)
-             y_i = ele%Coords(2, i)
+                IF( Nk == nn_NU(Ni)%con(j) ) THEN
+
+                   nn_NU(Ni)%con(j) = -nn_NU(Ni)%con(j)
+
+                   x_i = ele%Coords(1, i)
+                   y_i = ele%Coords(2, i)
+
+                   x_k = ele%Coords(1, k)
+                   y_k = ele%Coords(2, k)
+
+                   w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
           
-             x_k = ele%Coords(1, k)
-             y_k = ele%Coords(2, k)
+                   ! A --> Ni
+                   A(Ni)%MM(1,1) = A(Ni)%MM(1,1) +  2.d0*w_ik*(x_k - x_i)**2
+                   A(Ni)%MM(2,2) = A(Ni)%MM(2,2) +  2.d0*w_ik*(y_k - y_i)**2
+                   A(Ni)%MM(3,3) = A(Ni)%MM(3,3) + 0.5d0*w_ik*(x_k - x_i)**4
+                   A(Ni)%MM(4,4) = A(Ni)%MM(4,4) + 0.5d0*w_ik*(y_k - y_i)**4
+                   A(Ni)%MM(5,5) = A(Ni)%MM(5,5) + 2.d0*w_ik*((x_k - x_i)**2)* &
+                                                             ((y_k - y_i)**2)
 
-             w_ik = 1.d0 / ( (x_i - x_k)**2 + (y_i - y_k)**2 )
+                   ! ---
 
-             ! A --> Ni
-             A(Ni)%MM(1,1) = A(Ni)%MM(1,1) +  2.d0*w_ik*(x_k - x_i)**2
-             A(Ni)%MM(2,2) = A(Ni)%MM(2,2) +  2.d0*w_ik*(y_k - y_i)**2
-             A(Ni)%MM(3,3) = A(Ni)%MM(3,3) + 0.5d0*w_ik*(x_k - x_i)**4
-             A(Ni)%MM(4,4) = A(Ni)%MM(4,4) + 0.5d0*w_ik*(y_k - y_i)**4
-             A(Ni)%MM(5,5) = A(Ni)%MM(5,5) + 2.d0*w_ik*((x_k - x_i)**2)* &
-                                                       ((y_k - y_i)**2)
+                   A(Ni)%MM(1,2) = A(Ni)%MM(1,2) +  2.d0*w_ik*(x_k - x_i)*&
+                                                              (y_k - y_i)
+                   A(Ni)%MM(1,3) = A(Ni)%MM(1,3) +       w_ik*(x_k - x_i)**3
+                   A(Ni)%MM(1,4) = A(Ni)%MM(1,4) +       w_ik*(x_k - x_i)*&
+                                                              (y_k - y_i)**2
+                   A(Ni)%MM(1,5) = A(Ni)%MM(1,5) + 2.d0*w_ik*((x_k - x_i)**2)*&
+                                                              (y_k - y_i)
+                   ! ---
 
-             ! ---
-                
-             A(Ni)%MM(1,2) = A(Ni)%MM(1,2) +  2.d0*w_ik*(x_k - x_i)*&
-                                                         (y_k - y_i)
-             A(Ni)%MM(1,3) = A(Ni)%MM(1,3) +        w_ik*(x_k - x_i)**3
-             A(Ni)%MM(1,4) = A(Ni)%MM(1,4) +        w_ik*(x_k - x_i)*&
-                                                         (y_k - y_i)**2
-             A(Ni)%MM(1,5) = A(Ni)%MM(1,5) + 2.d0*w_ik*((x_k - x_i)**2)*&
-                                                        (y_k - y_i)
+                   A(Ni)%MM(2,1) = A(Ni)%MM(1,2) 
+                   A(Ni)%MM(2,3) = A(Ni)%MM(2,3) +     w_ik*((x_k - x_i)**2)*&
+                                                             (y_k - y_i)
+                   A(Ni)%MM(2,4) = A(Ni)%MM(2,4) +     w_ik* (y_k - y_i)**3
+                   A(Ni)%MM(2,5) = A(Ni)%MM(2,5) + 2.d0*w_ik*(x_k - x_i)*&
+                                                             (y_k - y_i)**2
 
-             ! ---
+                   ! ---
 
-             A(Ni)%MM(2,1) = A(Ni)%MM(1,2) 
-             A(Ni)%MM(2,3) = A(Ni)%MM(2,3) +     w_ik*((x_k - x_i)**2)*&
-                                                       (y_k - y_i)
-             A(Ni)%MM(2,4) = A(Ni)%MM(2,4) +     w_ik* (y_k - y_i)**3
-             A(Ni)%MM(2,5) = A(Ni)%MM(2,5) + 2.d0*w_ik*(x_k - x_i)*&
-                                                       (y_k - y_i)**2
+                   A(Ni)%MM(3,1) = A(Ni)%MM(1,3)
+                   A(Ni)%MM(3,2) = A(Ni)%MM(2,3)
+                   A(Ni)%MM(3,4) = A(Ni)%MM(3,4) + 0.5d0*w_ik*((x_k - x_i)**2)*&
+                                                              ((y_k - y_i)**2)
+                   A(Ni)%MM(3,5) = A(Ni)%MM(3,5) +       w_ik*((x_k - x_i)**3)*&
+                                                              ((y_k - y_i))
 
-             ! ---
+                   ! ---
 
-             A(Ni)%MM(3,1) = A(Ni)%MM(1,3)
-             A(Ni)%MM(3,2) = A(Ni)%MM(2,3)
-             A(Ni)%MM(3,4) = A(Ni)%MM(3,4) + 0.5d0*w_ik*((x_k - x_i)**2)*&
-                                                        ((y_k - y_i)**2)
-             A(Ni)%MM(3,5) = A(Ni)%MM(3,5) +       w_ik*((x_k - x_i)**3)*&
-                                                        ((y_k - y_i))
+                   A(Ni)%MM(4,1) = A(Ni)%MM(1,4)
+                   A(Ni)%MM(4,2) = A(Ni)%MM(2,4)
+                   A(Ni)%MM(4,3) = A(Ni)%MM(3,4)          
+                   A(Ni)%MM(4,5) = A(Ni)%MM(4,5) +       w_ik*((x_k - x_i))*&
+                                                              ((y_k - y_i)**3)
 
-             ! ---
-
-             A(Ni)%MM(4,1) = A(Ni)%MM(1,4)
-             A(Ni)%MM(4,2) = A(Ni)%MM(2,4)
-             A(Ni)%MM(4,3) = A(Ni)%MM(3,4)          
-             A(Ni)%MM(4,5) = A(Ni)%MM(4,5) +       w_ik*((x_k - x_i))*&
-                                                        ((y_k - y_i)**3)
-
-             A(Ni)%MM(5,1) = A(Ni)%MM(1,5)
-             A(Ni)%MM(5,2) = A(Ni)%MM(2,5)
-             A(Ni)%MM(5,3) = A(Ni)%MM(3,5)
-             A(Ni)%MM(5,4) = A(Ni)%MM(4,5)
+                   A(Ni)%MM(5,1) = A(Ni)%MM(1,5)
+                   A(Ni)%MM(5,2) = A(Ni)%MM(2,5)
+                   A(Ni)%MM(5,3) = A(Ni)%MM(3,5)
+                   A(Ni)%MM(5,4) = A(Ni)%MM(4,5)
 
 
-             ! A --> Nk
-             A(Nk)%MM(1,1) = A(Nk)%MM(1,1) +  2.d0*w_ik*(x_i - x_k)**2
-             A(Nk)%MM(2,2) = A(Nk)%MM(2,2) +  2.d0*w_ik*(y_i - y_k)**2
-             A(Nk)%MM(3,3) = A(Nk)%MM(3,3) + 0.5d0*w_ik*(x_i - x_k)**4
-             A(Nk)%MM(4,4) = A(Nk)%MM(4,4) + 0.5d0*w_ik*(y_i - y_k)**4
-             A(Nk)%MM(5,5) = A(Nk)%MM(5,5) + 2.d0*w_ik*((x_i - x_k)**2)* &
-                                                       ((y_i - y_k)**2)
+                ENDIF
+                        
+             ENDDO ! j <= #Con
 
-             ! ---
-                
-             A(Nk)%MM(1,2) = A(Nk)%MM(1,2) + 2.d0*w_ik*(x_i - x_k)*&
-                                                       (y_i - y_k)
-             A(Nk)%MM(1,3) = A(Nk)%MM(1,3) +      w_ik*(x_i - x_k)**3
-             A(Nk)%MM(1,4) = A(Nk)%MM(1,4) +      w_ik*(x_i - x_k)*&
-                                                       (y_i - y_k)**2
-             A(Nk)%MM(1,5) = A(Nk)%MM(1,5) + 2.d0*w_ik*((x_i - x_k)**2)*&
-                                                        (y_i - y_k)
+          ENDDO ! k <= #N_points
 
-             ! ---
+       ENDDO ! i <= #N_points
 
-             A(Nk)%MM(2,1) = A(Nk)%MM(1,2) 
-             A(Nk)%MM(2,3) = A(Nk)%MM(2,3) +     w_ik*((x_i - x_k)**2)*&
-                                                       (y_i - y_k)
-             A(Nk)%MM(2,4) = A(Nk)%MM(2,4) +      w_ik*(y_i - y_k)**3
-             A(Nk)%MM(2,5) = A(Nk)%MM(2,5) + 2.d0*w_ik*(x_i - x_k)*&
-                                                       (y_i - y_k)**2
-
-             ! ---
-
-             A(Nk)%MM(3,1) = A(Nk)%MM(1,3)
-             A(Nk)%MM(3,2) = A(Nk)%MM(2,3)
-             A(Nk)%MM(3,4) = A(Nk)%MM(3,4) + 0.5d0*w_ik*((x_i - x_k)**2)*&
-                                                        ((y_i - y_k)**2)
-             A(Nk)%MM(3,5) = A(Nk)%MM(3,5) +       w_ik*((x_i - x_k)**3)*&
-                                                        ((y_i - y_k))
-
-             ! ---
-
-             A(Nk)%MM(4,1) = A(Nk)%MM(1,4)
-             A(Nk)%MM(4,2) = A(Nk)%MM(2,4)
-             A(Nk)%MM(4,3) = A(Nk)%MM(3,4)          
-             A(Nk)%MM(4,5) = A(Nk)%MM(4,5) +       w_ik*((x_i - x_k))*&
-                                                        ((y_i - y_k)**3)
-
-             A(Nk)%MM(5,1) = A(Nk)%MM(1,5)
-             A(Nk)%MM(5,2) = A(Nk)%MM(2,5)
-             A(Nk)%MM(5,3) = A(Nk)%MM(3,5)
-             A(Nk)%MM(5,4) = A(Nk)%MM(4,5)
-             
-          ENDDO
-
-       ENDDO
-
-       DEALLOCATE(Nu)
-
-    ENDDO
-
+    ENDDO ! je <= #elements
+    !---------------------------------------------
+   
     ALLOCATE( inv_A(N_dofs) )
 
     DO i = 1, N_dofs
@@ -1074,6 +1166,8 @@ CONTAINS
        ALLOCATE( inv_A(i)%MM(5,5) )
 
        inv_A(i)%MM = inverse_LU( A(i)%MM ) 
+
+       nn_NU(i)%con = -nn_NU(i)%con
 
     ENDDO
 

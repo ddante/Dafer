@@ -21,7 +21,8 @@ MODULE models
                          ELLIPTIC_PROBLEM   = 11,&
                          MANUFACTED_AD      = 12,&
                          NISHIK_ADVEC_DIFF  = 13,&
-                         ANISOTROP_DIFF     = 14
+                         ANISOTROP_DIFF     = 14,&
+                         BURGER_VISC        = 15
    !===============================================
    
    REAL(KIND=8), PARAMETER :: PI = DACOS(-1.d0)
@@ -134,6 +135,11 @@ MODULE models
             a(1) = 0.d0
             a(2) = 0.d0
 
+         CASE(BURGER_VISC)
+
+            a(1) = uu
+            a(2) = 1.d0
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -241,6 +247,11 @@ MODULE models
             flux(1) = 0.d0
             flux(2) = 0.d0
 
+         CASE(BURGER_VISC)
+            
+            flux(1) = 0.5d0 * uu**2 
+            flux(2) = uu
+
          CASE DEFAULT
          
             WRITE(*,*) 'Problem of unknow type.'
@@ -332,6 +343,10 @@ MODULE models
       CASE(ANISOTROP_DIFF)
 
          KK(1, 1) = 1.d0; KK(2, 2) = mu
+
+      CASE(BURGER_VISC)
+
+         KK(1, 1) = mu
 
       CASE DEFAULT
 
@@ -570,6 +585,10 @@ MODULE models
          CASE(ANISOTROP_DIFF)
 
             CALL bc_anisotrop_diff()
+
+         CASE(BURGER_VISC)
+            
+            CALL bc_burger_visc()
 
          CASE DEFAULT
          
@@ -1239,6 +1258,48 @@ CONTAINS
        END SUBROUTINE bc_anisotrop_diff
        !................................
 
+       !...........................
+       SUBROUTINE  bc_burger_visc()
+         !
+       ! Square [0,1]x[0,1]
+       !
+       IMPLICIT NONE
+
+         DO k = 1, Nv
+             IF ( ABS(coord(1, k)) <= 0.d0 .AND. & 
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_burger_visc(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.
+            ENDIF
+         ENDDO 
+             
+         DO k = 1, Nv
+            IF ( (ABS(coord(1, k) - 1.d0)) <= 0.d0 .AND. &
+                  ABS(coord(2, k)) >  0.d0) THEN
+               u_l(k) = u_ex_burger_visc(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO
+   
+         DO k = 1, Nv
+            IF ( ABS(coord(2, k)) <= 0.d0 ) THEN
+               u_l(k) = u_ex_burger_visc(coord(1, k), coord(2, k), visc)
+               rhs_l(k) = 0.d0              
+               n_loc = n_loc + 1
+               is_loc(n_loc) = k
+               b_flag = .TRUE.             
+            ENDIF            
+         ENDDO        
+
+       END SUBROUTINE bc_burger_visc
+       !............................
+
    END SUBROUTINE strong_bc
    !=======================
    
@@ -1345,6 +1406,10 @@ CONTAINS
 
          uu_ex = u_ex_anisotrp_diff(x, y, nu)
 
+      CASE(BURGER_VISC)
+
+         uu_ex = u_ex_burger_visc(x, y, nu)
+
       CASE DEFAULT
 
          stop
@@ -1401,6 +1466,10 @@ CONTAINS
       CASE(ANISOTROP_DIFF)
 
          G_uu_ex = grad_anisotrp_diff(x, y, nu)
+
+      CASE(BURGER_VISC)
+
+         G_uu_ex = grad_burger_visc(x, y, nu)
 
       CASE DEFAULT
 
@@ -1764,5 +1833,69 @@ CONTAINS
 
      END FUNCTION grad_anisotrp_diff
      !==============================     
+
+     !============================================
+     FUNCTION u_ex_burger_visc(x, y, nu) RESULT(f)
+     !============================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+       REAL(KIND=8), INTENT(IN) :: nu
+
+       REAL(KIND=8) :: f
+       !--------------------------------------------
+
+       f =  0.2D1 * nu * Pi * exp(-Pi ** 2 * nu * y) * sin(Pi * x) / &
+           (0.15D1 + exp(-Pi**2 * nu * y) * cos(Pi * x))
+
+     END FUNCTION u_ex_burger_visc
+     !============================ 
+
+     !=============================================
+     FUNCTION grad_burger_visc(x, y, nu) RESULT(GG)
+     !=============================================
+
+       IMPLICIT NONE
+
+       REAL(KIND=8), INTENT(IN) :: x
+       REAL(KIND=8), INTENT(IN) :: y
+       REAL(KIND=8), INTENT(IN) :: nu
+
+       REAL(KIND=8), DIMENSION(2) :: GG
+       !--------------------------------------------     
+
+       REAL(KIND=8) :: t1, t2, t4, t5, t6, t7, t8, t9, &
+                       t11, t12, t13, t14, t16, t17, t19
+       !-------------------------------------------- 
+
+       t1 = Pi ** 2
+       t2 = nu * t1
+       t4 = exp(-t2 * y)
+       t5 = Pi * x
+       t6 = cos(t5)
+       t7 = t4 * t6
+       t8 = 0.15D1 + t7
+       t12 = t4 ** 2
+       t13 = sin(t5)
+       t14 = t13 ** 2
+       t16 = t8 ** 2
+       GG(1) = 0.2D1 * t2 * t7 / t8 + 0.2D1 * t2 * t12 * t14 / t16
+
+       t1 = nu ** 2
+       t2 = Pi ** 2
+       t4 = t1 * Pi * t2
+       t7 = exp(-t2 * nu * y)
+       t8 = Pi * x
+       t9 = sin(t8)
+       t11 = cos(t8)
+       t13 = 0.15D1 + t7 * t11
+       t17 = t7 ** 2
+       t19 = t13 ** 2
+       GG(2) = -0.2D1 * t4 * t7 * t9 / t13 + 0.2D1 * t4 * t17 * t9 / t19 * t11
+
+     END FUNCTION grad_burger_visc    
+     !============================  
 
 END MODULE models

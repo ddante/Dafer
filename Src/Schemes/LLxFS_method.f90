@@ -142,8 +142,10 @@ CONTAINS
     REAL(KIND=8), DIMENSION(:,:), ALLOCATABLE :: a
     REAL(KIND=8), DIMENSION(:),   ALLOCATABLE :: SS
     
-    REAL(KIND=8), DIMENSION(N_dim) :: D_u_q, &
+    REAL(KIND=8), DIMENSION(N_dim) :: D_u_q, a_i, &
                                       Dr_u_q, a_q
+
+    REAL(KIND=8), DIMENSION(N_dim, N_dim) :: KK_v
 
     REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: D_muD_phi_q
 
@@ -157,7 +159,7 @@ CONTAINS
     REAL(KIND=8) :: D_muD_u_q,  xi_Re, Re_h
     REAL(KIND=8) :: tau, Stab_D_u, Stab_D_phi
     
-    INTEGER :: iq, i, k, id, N_s, N_v 
+    INTEGER :: iq, i, k, id, jd, N_s, N_v 
     !---------------------------------------------
 
     Stab = 0.d0
@@ -201,9 +203,9 @@ CONTAINS
           
     tau = 1.d0 / tau
 
-!!$    Re_h = local_Pe(ele, u)
-!!$    xi_Re = MAX(0.d0, 1.d0 - 1.d0/Re_h)
-!!$    tau = tau * xi_Re
+    Re_h = local_Pe(ele, u)
+    xi_Re = MAX(0.d0, 1.d0 - 1.d0/Re_h)
+    tau = tau * xi_Re
 
     !-------------------
     ! Stabilization term
@@ -213,20 +215,26 @@ CONTAINS
        !------------------------
        ! Div( mu * Grad(Phi_i) )
        !-----------------------------------------------
-       D_muD_phi_q = 0.d0       
+       D_muD_phi_q = 0.d0 
+       
        DO i = 1, N_s
 
           DO id = 1, N_dim
 
-             DO k = 1, N_s
-                D_muD_phi_q(i) = D_muD_phi_q(i) +     &
-                                 visc*D_phi_k(id, i, k) * &
-                                 D_phi_q(id, k, iq)
+             DO jd = 1, N_dim
+
+                DO k = 1, N_s
+                   D_muD_phi_q(i) = D_muD_phi_q(i) +                 &
+                                    KK_v(id, jd)*D_phi_k(jd, i, k) * & 
+                                                 D_phi_q(id, k, iq)
+
+                ENDDO
+
              ENDDO
 
           ENDDO
 
-       ENDDO     
+       ENDDO
        !-------------------------------------------------
       
       Dr_u_q = 0.d0 ! Reconstructed gradient
@@ -260,8 +268,18 @@ CONTAINS
           Stab(i) = Stab(i) + Stab_D_u * Stab_D_phi * w(iq)
           
          ! Lax-Wendroff like stabilization
-         Stab(i) = Stab(i) + &
-                   visc * DOT_PRODUCT(D_phi_q(:, i, iq), (D_u_q - Dr_u_q)) * w(iq) 
+          IF(is_visc) THEN
+
+             a_i = 0.d0
+             DO id = 1, N_dim
+                DO jd = 1, N_dim
+                   a_i(id) = a_i(id) + KK_V(id, jd)*D_phi_q(jd, i, iq)
+                ENDDO
+             ENDDO
+
+             Stab(i) = Stab(i) + (1.d0 - xi_Re)*&
+                        DOT_PRODUCT(a_i, (D_u_q - Dr_u_q)) * w(iq) 
+          ENDIF
 
        ENDDO
 
@@ -545,7 +563,6 @@ CONTAINS
   END FUNCTION CIP_stabilization2
   !=============================
 
-
   !=====================================
   FUNCTION Local_Pe(ele, u) RESULT(l_Pe)
   !=====================================
@@ -558,49 +575,39 @@ CONTAINS
     REAL(KIND=8) :: l_Pe
     !---------------------------------------------
 
-    REAL(KIND=8) :: x_i, y_i, h, p
+    REAL(KIND=8) :: x_m, y_m, u_m, P, h
 
-    REAL(KIND=8), DIMENSION(N_dim) :: a, gg, xx
+    REAL(KIND=8), DIMENSION(2) :: a_m
 
-    INTEGER :: N_v, i, j
-
-    REAL(KIND=8), PARAMETER ::  Pi = DACOS(-1.d0)
+    INTEGER :: Ns, i
     !-------------------------------------------------
 
-    N_v = ele%N_verts
+    Ns = ele%N_points
 
-    h = 0.d0
+    u_m = SUM(u) / REAL(Ns)
 
-    DO j = 1, N_dim
-       gg(j) = SUM(ele%coords(j, 1:N_v)) / REAL(N_v)
-    ENDDO    
+    x_m = SUM(ele%Coords(1, :)) / REAL(Ns)
+    y_m = SUM(ele%Coords(2, :)) / REAL(Ns)
 
-    DO i = 1, N_v
-
-       x_i = ele%coords(1, i)
-       y_i = ele%coords(2, i)
-
-       xx = (/ x_i, y_i /)
-
-       h = h + SUM( (xx - gg)**2 )
-
-       a = advection_speed(pb_type, u(i), x_i, y_i)
-       
-    ENDDO
-
-!!$    h =  ele%Volume / SQRT(N_v * h)
+    a_m = advection_speed(pb_type, u_m, x_m, y_m)
 
     P = 0.d0
     DO i = 1, ele%N_faces
        P = P + SUM(ele%faces(i)%f%w_q)
     ENDDO
     
-    h = ele%Volume/P
+    h = 2.d0*ele%Volume/P
 
-    h = h*(2.d0*(2.d0 + SQRT(2.d0)))
+    !!h = h*(2.d0*(2.d0 + SQRT(2.d0)))
 
-    l_Pe = SQRT(SUM(a*a)) * h / visc
+    IF(is_visc) THEN
+       l_Pe = SQRT(SUM(a_m*a_m)) * h / visc
+    ELSE
+       l_Pe = HUGE(1.d0)
+    ENDIF
 
+    l_Pe = MAX( l_Pe, 1.0E-12 )
+    
   END FUNCTION Local_Pe
   !====================
 
